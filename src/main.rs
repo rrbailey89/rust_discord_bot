@@ -1,18 +1,22 @@
 use poise::serenity_prelude as serenity;
-use serenity::all::ChannelType;
+use serenity::all::{ChannelType, RoleId};
 use std::error::Error;
 use tokio_postgres::NoTls;
 use tracing::{debug, error, info};
 use reqwest;
 use serde_json::Value;
 use reqwest::Client;
-
 use serenity::builder::CreateEmbed;
+use serenity::model::user::User;
+use serenity::model::guild::Member;
+use chrono::{DateTime, Utc, TimeZone};
+use poise::CreateReply;
+use poise::command;
 
 const DATABASE_URL: &str = "postgres://serena:password4321@postgres/discord_bot_test_server";
 
 struct Data {} // User data, which is stored and accessible in all command invocations
-type ErrorType = Box<dyn std::error::Error + Send + Sync>;
+type ErrorType = Box<dyn Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, ErrorType>;
 
 /// Function to fetch the bot token from PostgreSQL
@@ -145,10 +149,10 @@ async fn on_guild_delete(guild_id: serenity::GuildId) -> Result<(), ErrorType> {
 }
 
 /// Warn a member
-#[poise::command(slash_command)]
+#[command(slash_command)]
 async fn warn(
     ctx: Context<'_>,
-    #[description = "Member to warn"] member: serenity::Member,
+    #[description = "Member to warn"] member: Member,
     #[description = "Reason for the warning"] reason: Option<String>,
 ) -> Result<(), ErrorType> {
     ctx.defer().await?;
@@ -177,7 +181,7 @@ async fn warn(
     Ok(())
 }
 
-#[poise::command(slash_command)]
+#[command(slash_command)]
 async fn setwarnchannel(
     ctx: Context<'_>,
     #[description = "Channel to log warnings"] channel: serenity::Channel,
@@ -195,11 +199,11 @@ async fn setwarnchannel(
     Ok(())
 }
 
-#[poise::command(slash_command)]
+#[command(slash_command)]
 async fn randomcatimage(ctx: Context<'_>) -> Result<(), ErrorType> {
     ctx.defer().await?;
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
     let response = client.get("https://api.thecatapi.com/v1/images/search")
         .send()
         .await?
@@ -208,11 +212,11 @@ async fn randomcatimage(ctx: Context<'_>) -> Result<(), ErrorType> {
 
     let image_url = response[0]["url"].as_str().ok_or("Failed to get image URL")?;
 
-    let embed = serenity::CreateEmbed::default()
+    let embed = CreateEmbed::default()
         .title("Random Cat Image")
         .image(image_url);
 
-    let reply = poise::CreateReply::default()
+    let reply = CreateReply::default()
         .embed(embed);
 
     ctx.send(reply).await?;
@@ -220,11 +224,11 @@ async fn randomcatimage(ctx: Context<'_>) -> Result<(), ErrorType> {
     Ok(())
 }
 
-#[poise::command(slash_command)]
+#[command(slash_command)]
 async fn randomcapyimage(ctx: Context<'_>) -> Result<(), ErrorType> {
     ctx.defer().await?;
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
     let response = client.get("https://api.capy.lol/v1/capybara?json=true")
         .send()
         .await?
@@ -235,11 +239,11 @@ async fn randomcapyimage(ctx: Context<'_>) -> Result<(), ErrorType> {
     let image_url = data["url"].as_str().ok_or("Failed to get image URL")?;
     let alt_text = data["alt"].as_str().unwrap_or("Random Capybara");
 
-    let embed = serenity::CreateEmbed::default()
+    let embed = CreateEmbed::default()
         .title(alt_text)
         .image(image_url);
 
-    let reply = poise::CreateReply::default()
+    let reply = CreateReply::default()
         .embed(embed);
 
     ctx.send(reply).await?;
@@ -298,6 +302,85 @@ async fn event_handler(
     Ok(())
 }
 
+#[derive(Debug)]
+struct UserInfo {
+    discord_name: String,
+    nickname: Option<String>,
+    account_created: DateTime<Utc>,
+    joined_server: DateTime<Utc>,
+    roles: Vec<RoleId>,
+    hug_count: i32,
+}
+
+#[command(context_menu_command = "User Information")]
+async fn user_info(
+    ctx: Context<'_>,
+    user: User,
+) -> Result<(), ErrorType> {
+    ctx.defer().await?;
+
+    let guild_id = ctx.guild_id().ok_or("Failed to get guild ID")?;
+    let member = ctx.http().get_member(guild_id, user.id).await?;
+
+    let user_info = fetch_user_info(&ctx, &user, &member, guild_id).await?;
+    let embed = create_user_info_embed(&user_info, &user);
+
+    let reply = CreateReply::default()
+        .embed(embed);
+
+    ctx.send(reply).await?;
+
+    Ok(())
+}
+
+async fn fetch_user_info(
+    _ctx: &Context<'_>,
+    user: &User,
+    member: &Member,
+    _guild_id: serenity::GuildId
+) -> Result<UserInfo, ErrorType> {
+    let (client, connection) = tokio_postgres::connect(DATABASE_URL, NoTls).await?;
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            error!("connection error: {}", e);
+        }
+    });
+
+    let hug_count: i32 = client
+        .query_opt(
+            "SELECT hug_count FROM user_hug_counts WHERE user_id = $1",
+            &[&(user.id.get() as i64)]
+        )
+        .await?
+        .map(|row| row.get(0))
+        .unwrap_or(0);
+
+    Ok(UserInfo {
+        discord_name: user.name.clone(),
+        nickname: member.nick.clone(),
+        account_created: Utc.timestamp_millis_opt(user.created_at().unix_timestamp() * 1000).unwrap(),
+        joined_server: member.joined_at
+            .map(|ts| Utc.timestamp_millis_opt(ts.unix_timestamp() * 1000).unwrap())
+            .unwrap_or_else(|| Utc::now()),
+        roles: member.roles.clone(),
+        hug_count,
+    })
+}
+
+
+fn create_user_info_embed(user_info: &UserInfo, user: &User) -> CreateEmbed {
+    CreateEmbed::default()
+        .title(format!("User Information for {}", user_info.nickname.as_deref().unwrap_or(&user.name)))
+        .field("Discord Name", &user_info.discord_name, true)
+        .field("Nickname", user_info.nickname.as_deref().unwrap_or("None"), true)
+        .field("Account Created On", format!("<t:{}:f>", user_info.account_created.timestamp()), true)
+        .field("Joined Server On", format!("<t:{}:f>", user_info.joined_server.timestamp()), true)
+        .field("Roles", if user_info.roles.is_empty() { "None".to_string() } else { user_info.roles.iter().map(|r| format!("<@&{}>", r)).collect::<Vec<_>>().join(", ") }, true)
+        .field("Total Hugs Received", user_info.hug_count.to_string(), true)
+        .image(user.face())
+        .color(0x00ff00)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), ErrorType> {
     tracing_subscriber::fmt::init();
@@ -307,7 +390,7 @@ async fn main() -> Result<(), ErrorType> {
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![warn(), setwarnchannel(), randomcatimage(), randomcapyimage()],
+            commands: vec![warn(), setwarnchannel(), randomcatimage(), randomcapyimage(), user_info()],
             event_handler: |ctx, event, framework, data| {
                 Box::pin(event_handler(ctx, event, framework, data))
             },
