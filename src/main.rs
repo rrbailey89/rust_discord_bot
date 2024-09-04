@@ -24,7 +24,8 @@ async fn main() -> Result<(), Error> {
     let config = Config::load().await?;
     let database = Database::connect(&config.database_url).await?;
 
-    let config_clone = config.clone();
+    let config_clone = config.clone(); // Clone config here
+
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: commands::get_commands(),
@@ -36,7 +37,10 @@ async fn main() -> Result<(), Error> {
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { config, database })
+                Ok(Data {
+                    config: config_clone, // Use the cloned config
+                    database,
+                })
             })
         })
         .build();

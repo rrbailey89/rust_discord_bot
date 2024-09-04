@@ -8,7 +8,7 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Get a random capybara image
 #[poise::command(slash_command)]
-pub async fn random_capy_image(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn randomcapyimage(ctx: Context<'_>) -> Result<(), Error> {
     ctx.defer().await?;
 
     let client = reqwest::Client::new();

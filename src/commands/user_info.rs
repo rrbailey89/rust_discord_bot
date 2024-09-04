@@ -1,7 +1,7 @@
 // commands/user_info.rs
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{User, Member, CreateEmbed};
+use poise::serenity_prelude::{User, Member, CreateEmbed, RoleId};
 use poise::CreateReply;
 use chrono::{DateTime, Utc};
 
@@ -12,13 +12,13 @@ struct UserInfo {
     nickname: Option<String>,
     account_created: DateTime<Utc>,
     joined_server: DateTime<Utc>,
-    roles: Vec<String>,
+    roles: Vec<RoleId>,
     hug_count: i32,
 }
 
 /// Get information about a user
 #[poise::command(context_menu_command = "User Information")]
-pub async fn user_info(
+pub async fn userinfo(
     ctx: Context<'_>,
     user: User,
 ) -> Result<(), Error> {
@@ -46,7 +46,7 @@ async fn fetch_user_info(ctx: &Context<'_>, user: &User, member: &Member) -> Res
         joined_server: member.joined_at
             .map(|ts| *ts)
             .unwrap_or_else(Utc::now),
-        roles: member.roles.iter().map(|r| r.to_string()).collect(),
+        roles: member.roles.clone(),
         hug_count,
     })
 }
@@ -58,8 +58,12 @@ fn create_user_info_embed(user_info: &UserInfo, user: &User) -> CreateEmbed {
         .field("Nickname", user_info.nickname.as_deref().unwrap_or("None"), true)
         .field("Account Created", format!("<t:{}:F>", user_info.account_created.timestamp()), true)
         .field("Joined Server", format!("<t:{}:F>", user_info.joined_server.timestamp()), true)
-        .field("Roles", if user_info.roles.is_empty() { "None".to_string() } else { user_info.roles.join(", ") }, false)
+        .field("Roles", if user_info.roles.is_empty() {
+            "None".to_string()
+        } else {
+            user_info.roles.iter().map(|r| format!("<@&{}>", r)).collect::<Vec<_>>().join(", ")
+        }, true)
         .field("Total Hugs Received", user_info.hug_count.to_string(), true)
-        .thumbnail(user.face())
+        .image(user.face())
         .color(0x00ff00)
 }

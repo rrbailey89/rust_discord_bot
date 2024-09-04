@@ -16,12 +16,12 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
     vec![
         warn::warn(),
-        set_warn_channel::set_warn_channel(),
-        random_cat_image::random_cat_image(),
-        random_capy_image::random_capy_image(),
-        user_info::user_info(),
-        anime_hug::anime_hug(),
-        update_raid_time::update_raid_time(),
+        set_warn_channel::setwarnchannel(),
+        random_cat_image::randomcatimage(),
+        random_capy_image::randomcapyimage(),
+        user_info::userinfo(),
+        anime_hug::animehug(),
+        update_raid_time::updateraidtime(),
         ask::ask(),
     ]
 }
