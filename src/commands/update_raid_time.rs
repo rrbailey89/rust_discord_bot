@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::Data;
 use crate::utils::parse_datetime;
 use poise::serenity_prelude::{ChannelId, CreateAllowedMentions};
-use chrono::Utc;
 use poise::serenity_prelude::EditChannel;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -96,7 +95,7 @@ impl Raid {
 
 /// Update the raid time in a channel's topic
 #[poise::command(slash_command)]
-pub async fn update_raid_time(
+pub async fn updateraidtime(
     ctx: Context<'_>,
     #[description = "Select the month"] month: Month,
     #[description = "Enter the day"] day: i64,

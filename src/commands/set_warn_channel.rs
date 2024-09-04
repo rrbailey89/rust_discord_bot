@@ -6,7 +6,7 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Set the channel for logging warnings
 #[poise::command(slash_command)]
-pub async fn set_warn_channel(
+pub async fn setwarnchannel(
     ctx: Context<'_>,
     #[description = "Channel to log warnings"] channel: Channel,
 ) -> Result<(), Error> {

@@ -22,7 +22,7 @@ pub async fn handle_event(
     Ok(())
 }
 
-async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Result<(), Error> {
+async fn handle_guild_create(_ctx: &Context, guild: &Guild, data: &Data) -> Result<(), Error> {
     // Log guild creation
     tracing::info!("Guild Create event received for: {} (ID: {})", guild.name, guild.id);
 

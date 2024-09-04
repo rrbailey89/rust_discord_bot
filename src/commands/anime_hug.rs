@@ -1,13 +1,13 @@
 // commands/anime_hug.rs
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{User, CreateEmbed, CreateMessage, CreateAllowedMentions, Mentionable};
+use poise::serenity_prelude::{User, CreateEmbed, Mentionable};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Hug another user with an anime gif
 #[poise::command(slash_command)]
-pub async fn anime_hug(
+pub async fn animehug(
     ctx: Context<'_>,
     #[description = "User to hug"] user: User,
 ) -> Result<(), Error> {
