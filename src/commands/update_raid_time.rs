@@ -15,21 +15,41 @@ pub enum Month {
 
 #[derive(poise::ChoiceParameter)]
 pub enum Time {
+    #[name = "12:00 AM"] T1200AM,
     #[name = "1:00 AM"] T0100AM,
     #[name = "2:00 AM"] T0200AM,
-    // ... Add all other time options ...
+    #[name = "3:00 AM"] T0300AM,
+    #[name = "4:00 AM"] T0400AM,
+    #[name = "5:00 AM"] T0500AM,
+    #[name = "6:00 AM"] T0600AM,
+    #[name = "7:00 AM"] T0700AM,
+    #[name = "8:00 AM"] T0800AM,
+    #[name = "9:00 AM"] T0900AM,
+    #[name = "10:00 AM"] T1000AM,
+    #[name = "11:00 AM"] T1100AM,
+    #[name = "12:00 PM"] T1200PM,
+    #[name = "1:00 PM"] T0100PM,
+    #[name = "2:00 PM"] T0200PM,
+    #[name = "3:00 PM"] T0300PM,
+    #[name = "4:00 PM"] T0400PM,
+    #[name = "5:00 PM"] T0500PM,
+    #[name = "6:00 PM"] T0600PM,
+    #[name = "7:00 PM"] T0700PM,
+    #[name = "8:00 PM"] T0800PM,
+    #[name = "9:00 PM"] T0900PM,
+    #[name = "10:00 PM"] T1000PM,
     #[name = "11:00 PM"] T1100PM,
 }
 
 #[derive(poise::ChoiceParameter)]
 pub enum Year {
-    Y2024 = 2024,
-    Y2025 = 2025,
-    Y2026 = 2026,
-    Y2027 = 2027,
-    Y2028 = 2028,
-    Y2029 = 2029,
-    Y2030 = 2030,
+    #[name = "2024"] Y2024 = 2024,
+    #[name = "2025"] Y2025 = 2025,
+    #[name = "2026"] Y2026 = 2026,
+    #[name = "2027"] Y2027 = 2027,
+    #[name = "2028"] Y2028 = 2028,
+    #[name = "2029"] Y2029 = 2029,
+    #[name = "2030"] Y2030 = 2030,
 }
 
 #[derive(poise::ChoiceParameter)]
@@ -44,10 +64,15 @@ pub enum Timezone {
 
 #[derive(poise::ChoiceParameter)]
 pub enum Raid {
+    #[name = "Alexander - The Burden of the Son (Savage)"]
     AlexanderBurdenSavage,
+    #[name = "Alexander - The Eyes of the Creator (Savage)"]
     AlexanderEyesSavage,
+    #[name = "Alexander - The Breath of the Creator (Savage)"]
     AlexanderBreathSavage,
+    #[name = "Alexander - The Heart of the Creator (Savage)"]
     AlexanderHeartSavage,
+    #[name = "Alexander - The Soul of the Creator (Savage)"]
     AlexanderSoulSavage,
 }
 
@@ -60,9 +85,29 @@ impl std::fmt::Display for Month {
 impl Time {
     fn to_string(&self) -> String {
         match self {
+            Time::T1200AM => "12:00 AM".to_string(),
             Time::T0100AM => "1:00 AM".to_string(),
             Time::T0200AM => "2:00 AM".to_string(),
-            // ... Add all other time options ...
+            Time::T0300AM => "3:00 AM".to_string(),
+            Time::T0400AM => "4:00 AM".to_string(),
+            Time::T0500AM => "5:00 AM".to_string(),
+            Time::T0600AM => "6:00 AM".to_string(),
+            Time::T0700AM => "7:00 AM".to_string(),
+            Time::T0800AM => "8:00 AM".to_string(),
+            Time::T0900AM => "9:00 AM".to_string(),
+            Time::T1000AM => "10:00 AM".to_string(),
+            Time::T1100AM => "11:00 AM".to_string(),
+            Time::T1200PM => "12:00 PM".to_string(),
+            Time::T0100PM => "1:00 PM".to_string(),
+            Time::T0200PM => "2:00 PM".to_string(),
+            Time::T0300PM => "3:00 PM".to_string(),
+            Time::T0400PM => "4:00 PM".to_string(),
+            Time::T0500PM => "5:00 PM".to_string(),
+            Time::T0600PM => "6:00 PM".to_string(),
+            Time::T0700PM => "7:00 PM".to_string(),
+            Time::T0800PM => "8:00 PM".to_string(),
+            Time::T0900PM => "9:00 PM".to_string(),
+            Time::T1000PM => "10:00 PM".to_string(),
             Time::T1100PM => "11:00 PM".to_string(),
         }
     }

@@ -27,11 +27,9 @@ async fn handle_guild_create(_ctx: &Context, guild: &Guild, data: &Data) -> Resu
     tracing::info!("Guild Create event received for: {} (ID: {})", guild.name, guild.id);
 
     // Store guild info in the database
-    // Note: You'll need to implement this method in your Database struct
     data.database.store_guild_info(guild).await?;
 
     // Store guild channels in the database
-    // Note: You'll need to implement this method in your Database struct
     data.database.store_guild_channels(guild).await?;
 
     Ok(())
@@ -42,7 +40,6 @@ async fn handle_guild_delete(_ctx: &Context, guild_id: GuildId, data: &Data) -> 
     tracing::info!("Bot has left the guild with ID: {}", guild_id);
 
     // Remove guild info from the database
-    // Note: You'll need to implement this method in your Database struct
     data.database.remove_guild_info(guild_id.get() as i64).await?;
 
     Ok(())
