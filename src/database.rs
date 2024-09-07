@@ -178,4 +178,29 @@ impl Database {
             .await?;
         Ok(())
     }
+
+    // Fetch whether emoji reactions are enabled for a specific guild
+    pub async fn fetch_emoji_reactions_enabled(&self, guild_id: i64) -> Result<bool, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT emoji_reactions_enabled FROM guild_emoji_settings WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)).unwrap_or(true)) // Explicitly return true if no record is found
+    }
+
+    // Store or update the emoji reactions enabled/disabled setting for a guild
+    pub async fn store_emoji_reactions_enabled(&self, guild_id: i64, enabled: bool) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO guild_emoji_settings (guild_id, emoji_reactions_enabled)
+                 VALUES ($1, $2)
+                 ON CONFLICT (guild_id) DO UPDATE SET emoji_reactions_enabled = EXCLUDED.emoji_reactions_enabled",
+                &[&guild_id, &enabled],
+            )
+            .await?;
+        Ok(())
+    }
 }

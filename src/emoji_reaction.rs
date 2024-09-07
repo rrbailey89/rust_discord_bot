@@ -11,35 +11,51 @@ pub async fn handle_message(
     data: &Data,
     message: &Message,
 ) -> Result<(), Error> {
-    let keywords = vec!["pierce brosnan", "yoshi p", "yoship", "yoshi-p", "japan", "raid", "shion", "saskia", "erik", "amia", "opal", "lief", "dyna", "bot", "cat", "broken", "lol", "lmao", "a8s"];
-    let content = message.content.to_lowercase();
+    // Check if the message is in a guild
+    if let Some(guild_id) = message.guild_id {
+        // Fetch whether emoji reactions are enabled for this guild from the database
+        let emoji_reactions_enabled = data.database.fetch_emoji_reactions_enabled(guild_id.get() as i64).await?;
 
-    let mut trigger_word_found = false;
-    for keyword in keywords {
-        if content.contains(keyword) {
-            trigger_word_found = true;
-            if rand::thread_rng().gen_range(0..100) <= 40 {
-                let emoji = match keyword {
-                    "cat" => "🐱",
-                    "broken" => "🤔",
-                    "lol" | "lmao" => "🤣",
-                    "saskia" => "💜",
-                    "yoship" | "yoshi p" | "yoshi-p" => "<:wine31:1223785508702781460>",
-                    _ => "🤖",
-                };
-                message.react(ctx, ReactionType::Unicode(emoji.to_string())).await?;
+        // Proceed with emoji reactions only if they are enabled for the guild
+        if emoji_reactions_enabled {
+            let keywords = vec![
+                "pierce brosnan", "yoshi p", "yoship", "yoshi-p", "japan", "raid",
+                "shion", "saskia", "erik", "amia", "opal", "lief", "dyna", "bot",
+                "cat", "broken", "lol", "lmao", "a8s"
+            ];
+            let content = message.content.to_lowercase();
+
+            let mut trigger_word_found = false;
+            for keyword in keywords {
+                if content.contains(keyword) {
+                    trigger_word_found = true;
+                    // Random chance for reacting with the emoji
+                    if rand::thread_rng().gen_range(0..100) <= 40 {
+                        let emoji = match keyword {
+                            "cat" => "🐱",
+                            "broken" => "🤔",
+                            "lol" | "lmao" => "🤣",
+                            "saskia" => "💜",
+                            "yoship" | "yoshi p" | "yoshi-p" => "<:wine31:1223785508702781460>",
+                            _ => "🤖",
+                        };
+                        message.react(ctx, ReactionType::Unicode(emoji.to_string())).await?;
+                    }
+                    break; // Stop after finding the first keyword
+                }
             }
-            break;
-        }
-    }
 
-    if !trigger_word_found && rand::thread_rng().gen_range(0..100) <= 15 {
-        let emoji = get_emoji_from_openai(&data.config.openai_api_key, &content).await?;
-        message.react(ctx, ReactionType::Unicode(emoji)).await?;
+            // If no trigger word is found, randomly get an emoji from OpenAI
+            if !trigger_word_found && rand::thread_rng().gen_range(0..100) <= 15 {
+                let emoji = get_emoji_from_openai(&data.config.openai_api_key, &content).await?;
+                message.react(ctx, ReactionType::Unicode(emoji)).await?;
+            }
+        }
     }
 
     Ok(())
 }
+
 
 async fn get_emoji_from_openai(api_key: &str, message: &str) -> Result<String, Error> {
     let client = Client::with_config(async_openai::config::OpenAIConfig::new().with_api_key(api_key));

@@ -12,6 +12,7 @@ use crate::database::Database;
 use crate::error::Error;
 use poise::serenity_prelude as serenity;
 use serenity::GatewayIntents;
+use tracing::Level;
 
 struct Data {
     config: Config,
@@ -20,7 +21,9 @@ struct Data {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .init();
 
     let config = Config::load().await?;
     let database = Database::connect(&config.database_url).await?;
