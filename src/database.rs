@@ -1,8 +1,7 @@
 // database.rs
 use tokio_postgres::{Client, NoTls};
 use crate::error::Error;
-use serenity::model::guild::Guild;
-use serenity::model::channel::ChannelType;
+use poise::serenity_prelude::{Guild, UserId, ChannelType};
 
 pub struct Database {
     client: Client,
@@ -73,11 +72,11 @@ impl Database {
         self.client
             .execute(
                 "INSERT INTO guild_info (guild_id, guild_name, owner_id, member_count)
-                 VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (guild_id) DO UPDATE SET
-                 guild_name = EXCLUDED.guild_name,
-                 owner_id = EXCLUDED.owner_id,
-                 member_count = EXCLUDED.member_count",
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (guild_id) DO UPDATE SET
+             guild_name = EXCLUDED.guild_name,
+             owner_id = EXCLUDED.owner_id,
+             member_count = EXCLUDED.member_count",
                 &[
                     &(guild.id.get() as i64),
                     &guild.name,
@@ -88,6 +87,7 @@ impl Database {
             .await?;
         Ok(())
     }
+
 
     pub async fn store_guild_channels(&self, guild: &Guild) -> Result<(), Error> {
         for (channel_id, channel) in &guild.channels {
@@ -132,6 +132,48 @@ impl Database {
             .execute(
                 "DELETE FROM guild_info WHERE guild_id = $1",
                 &[&guild_id],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn store_delete_log_channel(&self, guild_id: i64, channel_id: i64, guild_name: String) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO message_delete_channels (guild_id, channel_id, guild_name) VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, guild_name = EXCLUDED.guild_name",
+                &[&guild_id, &channel_id, &guild_name],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn fetch_delete_log_channel(&self, guild_id: i64) -> Result<Option<i64>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT channel_id FROM message_delete_channels WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
+    }
+    pub async fn get_conversation_thread_id_for_user(&self, user_id: UserId) -> Result<Option<String>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT conversation_id FROM user_conversation_ids WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
+                &[&(user_id.get() as i64)],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
+    }
+
+    pub async fn store_conversation_thread_id_for_user(&self, user_id: UserId, thread_id: String) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO user_conversation_ids (user_id, conversation_id, created_at) VALUES ($1, $2, NOW())",
+                &[&(user_id.get() as i64), &thread_id],
             )
             .await?;
         Ok(())
