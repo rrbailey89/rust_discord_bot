@@ -11,6 +11,7 @@ mod purge;
 mod set_delete_log_channel;
 mod ping;
 mod toggle_emoji_reactions;
+mod createimage;
 
 use crate::error::Error;
 use crate::Data;
@@ -33,6 +34,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         },
         set_delete_log_channel::setdeletemessagechannel(),
         ping::ping(),
-        toggle_emoji_reactions::toggleemojireactions()
+        toggle_emoji_reactions::toggleemojireactions(),
+        createimage::createimage()
     ]
 }
