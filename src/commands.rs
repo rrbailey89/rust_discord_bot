@@ -10,6 +10,7 @@ mod ask;
 mod purge;
 mod set_delete_log_channel;
 mod ping;
+mod toggle_emoji_reactions;
 
 use crate::error::Error;
 use crate::Data;
@@ -31,6 +32,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
             cmd
         },
         set_delete_log_channel::setdeletemessagechannel(),
-        ping::ping()
+        ping::ping(),
+        toggle_emoji_reactions::toggleemojireactions()
     ]
 }
