@@ -8,6 +8,8 @@ mod anime_hug;
 mod update_raid_time;
 mod ask;
 mod purge;
+mod set_delete_log_channel;
+mod ping;
 
 use crate::error::Error;
 use crate::Data;
@@ -28,5 +30,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
             cmd.default_member_permissions = Permissions::MANAGE_MESSAGES;
             cmd
         },
+        set_delete_log_channel::setdeletemessagechannel(),
+        ping::ping()
     ]
 }

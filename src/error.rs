@@ -1,10 +1,11 @@
 // error.rs
 use thiserror::Error;
+use poise::serenity_prelude;
 
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Serenity error: {0}")]
-    Serenity(#[from] serenity::Error),
+    Serenity(#[from] serenity_prelude::Error),
 
     #[error("Database error: {0}")]
     Database(#[from] tokio_postgres::Error),

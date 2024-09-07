@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::Data;
-use serenity::builder::GetMessages;
+use poise::serenity_prelude::{GetMessages};
 use poise::CreateReply;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -8,7 +8,10 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 #[poise::command(slash_command)]
 pub async fn purge(
     ctx: Context<'_>,
-    #[description = "Number of messages to delete"] count: u64,
+    #[description = "Number of messages to delete"]
+    #[min = 2]
+    #[max = 100]
+    count: u64,
 ) -> Result<(), Error> {
     if count == 0 || count > 100 {
         return Err(Error::Unknown("Please provide a number between 1 and 100".to_string()));

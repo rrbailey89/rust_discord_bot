@@ -5,6 +5,7 @@ mod database;
 mod error;
 mod events;
 mod utils;
+mod emoji_reaction;
 
 use crate::config::Config;
 use crate::database::Database;
@@ -49,5 +50,7 @@ async fn main() -> Result<(), Error> {
         .framework(framework)
         .await?;
 
-    client.start().await.map_err(Error::from)
+    client.cache.set_max_messages(1000);
+
+    client.start_autosharded().await.map_err(Error::from)
 }
