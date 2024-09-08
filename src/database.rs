@@ -2,9 +2,17 @@
 use tokio_postgres::{Client, NoTls};
 use crate::error::Error;
 use poise::serenity_prelude::{Guild, UserId, ChannelType};
+use crate::commands::reminder::{Reminder, Frequency};
+use chrono::{DateTime, Datelike, NaiveTime, Utc, Weekday, Duration};
+use std::sync::Arc;
+use num_traits::FromPrimitive;
+use std::str::FromStr;
+use tracing::{info, debug, error};
+use chrono_tz::America::Los_Angeles;
 
+#[derive(Clone)]
 pub struct Database {
-    client: Client,
+    client: Arc<Client>,
 }
 
 impl Database {
@@ -17,7 +25,7 @@ impl Database {
             }
         });
 
-        Ok(Self { client })
+        Ok(Self { client: client.into() })
     }
 
     pub async fn fetch_warn_channel(&self, guild_id: i64) -> Result<Option<i64>, Error> {
@@ -203,4 +211,165 @@ impl Database {
             .await?;
         Ok(())
     }
+
+    pub async fn create_reminder(&self, reminder: &Reminder) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO reminders (guild_id, channel_id, message, time, days, frequency)
+             VALUES ($1, $2, $3, $4, $5, $6)",
+                &[
+                    &reminder.guild_id,
+                    &reminder.channel_id,
+                    &reminder.message,
+                    &reminder.time,
+                    &reminder.days.iter().map(|d| d.num_days_from_sunday() as i32).collect::<Vec<i32>>(),
+                    &reminder.frequency.to_string(),
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+
+
+    pub async fn get_reminders(&self, guild_id: i64) -> Result<Vec<Reminder>, Error> {
+        let rows = self.client
+            .query(
+                "SELECT id, channel_id, message, time, days, frequency FROM reminders WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await?;
+
+        let reminders = rows.iter().map(|row| {
+            Reminder {
+                id: row.get(0),  // Make sure to get the actual ID
+                guild_id,
+                channel_id: row.get(1),
+                message: row.get(2),
+                time: row.get(3),
+                days: row.get::<_, Vec<i32>>(4)
+                    .into_iter()
+                    .map(|d| match d {
+                        0 => Weekday::Sun,
+                        1 => Weekday::Mon,
+                        2 => Weekday::Tue,
+                        3 => Weekday::Wed,
+                        4 => Weekday::Thu,
+                        5 => Weekday::Fri,
+                        6 => Weekday::Sat,
+                        _ => Weekday::Sun, // Default to Sunday for any unexpected values
+                    })
+                    .collect(),
+                frequency: Frequency::from_str(&row.get::<_, String>(5)).unwrap_or(Frequency::Daily),
+                last_sent: None,
+            }
+        }).collect();
+
+        Ok(reminders)
+    }
+
+    pub async fn delete_reminder(&self, guild_id: i64, reminder_id: i32) -> Result<(), Error> {
+        self.client
+            .execute(
+                "DELETE FROM reminders WHERE guild_id = $1 AND id = $2",
+                &[&guild_id, &reminder_id],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_due_reminders(&self) -> Result<Vec<Reminder>, Error> {
+        let now = Utc::now().with_timezone(&Los_Angeles);
+        let current_time = now.time();
+        let current_day = now.weekday().num_days_from_sunday() as i32;
+
+        info!("Checking for due reminders. Current time: {}, Current day: {}", now.format("%Y-%m-%d %H:%M:%S %Z"), current_day);
+
+        let query = "
+            SELECT id, guild_id, channel_id, message, time, days, frequency, last_sent
+            FROM reminders
+            WHERE $1 = ANY(days)
+            AND $2::time >= time
+            AND (
+                last_sent IS NULL
+                OR (
+                    CASE
+                        WHEN frequency = 'Daily' THEN
+                            $3::date > last_sent::date
+                        WHEN frequency = 'Weekly' THEN
+                            $3::date >= last_sent::date + INTERVAL '7 days'
+                        WHEN frequency = 'Monthly' THEN
+                            ($3::date >= last_sent::date + INTERVAL '1 month')
+                            AND (EXTRACT(DAY FROM $3::date) = EXTRACT(DAY FROM last_sent::date))
+                    END
+                    AND $2::time >= time
+                )
+            )";
+
+        debug!("Executing query: {}", query);
+        debug!("Query parameters: current_day={}, current_time={}, current_date={}",
+               current_day, current_time, now.date_naive());
+
+        let rows = self.client
+            .query(query, &[&current_day, &current_time, &now.date_naive()])
+            .await?;
+
+        info!("Query returned {} rows", rows.len());
+
+        let reminders: Vec<_> = rows.iter().map(|row| {
+            let id: i32 = row.get(0);
+            let guild_id: i64 = row.get(1);
+            let channel_id: i64 = row.get(2);
+            let message: String = row.get(3);
+            let time: NaiveTime = row.get(4);
+            let days: Vec<i32> = row.get(5);
+            let frequency: String = row.get(6);
+            let last_sent: Option<DateTime<Utc>> = row.get(7);
+
+            debug!("Found reminder: id={}, guild_id={}, channel_id={}, time={}, days={:?}, frequency={}, last_sent={:?}",
+               id, guild_id, channel_id, time, days, frequency, last_sent);
+
+            Reminder {
+                id,
+                guild_id,
+                channel_id,
+                message,
+                time,
+                days: days.into_iter()
+                    .map(|d| match d {
+                        0 => Weekday::Sun,
+                        1 => Weekday::Mon,
+                        2 => Weekday::Tue,
+                        3 => Weekday::Wed,
+                        4 => Weekday::Thu,
+                        5 => Weekday::Fri,
+                        6 => Weekday::Sat,
+                        _ => {
+                            error!("Unexpected day value: {}", d);
+                            Weekday::Sun // Default to Sunday for any unexpected values
+                        }
+                    })
+                    .collect(),
+                frequency: Frequency::from_str(&frequency).unwrap_or_else(|_| {
+                    error!("Invalid frequency: {}", frequency);
+                    Frequency::Daily
+                }),
+                last_sent,
+            }
+        }).collect();
+
+        debug!("Returning {} due reminders", reminders.len());
+
+        Ok(reminders)
+    }
+
+    pub async fn update_reminder_last_sent(&self, reminder_id: i32) -> Result<(), Error> {
+        self.client
+            .execute(
+                "UPDATE reminders SET last_sent = CURRENT_TIMESTAMP AT TIME ZONE 'America/Los_Angeles' WHERE id = $1",
+                &[&reminder_id],
+            )
+            .await?;
+        Ok(())
+    }
+
 }
