@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::Data;
+use async_openai::{types::{ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage, ChatCompletionRequestUserMessage, CreateChatCompletionRequestArgs}, Client};
 use poise::serenity_prelude::{Context, Message, ReactionType};
 use poise::FrameworkContext;
-use async_openai::{Client, types::{CreateChatCompletionRequestArgs, ChatCompletionRequestMessage,ChatCompletionRequestUserMessage, ChatCompletionRequestSystemMessage}};
 use rand::Rng;
 
 pub async fn handle_message(

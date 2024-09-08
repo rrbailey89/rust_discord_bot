@@ -1,6 +1,5 @@
-// error.rs
-use thiserror::Error;
 use poise::serenity_prelude;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {

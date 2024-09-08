@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{CreateAttachment};
-use async_openai::{Client, types::{CreateImageRequestArgs, ImageModel, ImageSize, ImageStyle, ImageResponseFormat, Image, ImageQuality}, };
+use async_openai::{types::{CreateImageRequestArgs, Image, ImageModel, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle}, Client, };
+use poise::serenity_prelude::CreateAttachment;
 
 
 type Context<'a> = poise::Context<'a, Data, Error>;

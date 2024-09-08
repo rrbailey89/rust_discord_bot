@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{GetMessages};
+use poise::serenity_prelude::GetMessages;
 use poise::CreateReply;
 
 type Context<'a> = poise::Context<'a, Data, Error>;

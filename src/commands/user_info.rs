@@ -1,9 +1,9 @@
 // commands/user_info.rs
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{User, Member, CreateEmbed, RoleId};
-use poise::CreateReply;
 use chrono::{DateTime, Utc};
+use poise::serenity_prelude::{CreateEmbed, Member, RoleId, User};
+use poise::CreateReply;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 

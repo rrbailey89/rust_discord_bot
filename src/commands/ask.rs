@@ -1,15 +1,15 @@
 use crate::{error::Error, Data};
 use async_openai::{
     types::{
-        AssistantStreamEvent, CreateThreadAndRunRequest, CreateThreadRequest,
-        MessageDeltaContent, CreateMessageRequest,
-        CreateMessageRequestContent, MessageRole,
-        CreateRunRequest,
+        AssistantStreamEvent, CreateMessageRequest, CreateMessageRequestContent,
+        CreateRunRequest, CreateThreadAndRunRequest,
+        CreateThreadRequest, MessageDeltaContent,
+        MessageRole,
     },
     Client,
 };
-use poise::serenity_prelude::CreateEmbed;
 use futures::StreamExt;
+use poise::serenity_prelude::CreateEmbed;
 
 #[poise::command(slash_command)]
 pub async fn ask(

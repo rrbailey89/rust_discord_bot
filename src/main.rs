@@ -8,15 +8,15 @@ mod utils;
 mod emoji_reaction;
 mod types;
 
-use std::sync::Arc;
 use crate::config::Config;
 use crate::database::Database;
 use crate::error::Error;
 use poise::serenity_prelude as serenity;
-use serenity::GatewayIntents;
-use tracing::Level;
-use tokio::time::{interval, Duration};
 use poise::serenity_prelude::{ChannelId, CreateMessage};
+use serenity::GatewayIntents;
+use std::sync::Arc;
+use tokio::time::{interval, Duration};
+use tracing::Level;
 
 #[derive(Clone)]
 pub struct Data {

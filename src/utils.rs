@@ -1,6 +1,6 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc, TimeZone};
-use chrono_tz::Tz;
 use crate::error::Error;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono_tz::Tz;
 
 pub fn parse_datetime(month: &str, day: i64, year: i64, time: &str, timezone: &str) -> Result<DateTime<Utc>, Error> {
     let month_num = match month.to_lowercase().as_str() {

@@ -1,7 +1,7 @@
 use crate::{error::Error, Data};
-use poise::{CreateReply, serenity_prelude::CreateEmbed};
-use std::time::Instant;
+use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use psutil::process::Process;
+use std::time::Instant;
 
 #[poise::command(slash_command)]
 pub async fn ping(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
