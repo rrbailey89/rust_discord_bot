@@ -3,11 +3,9 @@ use tokio_postgres::{Client, NoTls};
 use crate::error::Error;
 use poise::serenity_prelude::{Guild, UserId, ChannelType};
 use crate::commands::reminder::{Reminder, Frequency};
-use chrono::{DateTime, Datelike, NaiveTime, Utc, Weekday, Duration};
+use chrono::{Datelike, Utc, Weekday};
 use std::sync::Arc;
-use num_traits::FromPrimitive;
 use std::str::FromStr;
-use tracing::{info, debug, error};
 use chrono_tz::America::Los_Angeles;
 
 #[derive(Clone)]
@@ -282,8 +280,6 @@ impl Database {
         let current_time = now.time();
         let current_day = now.weekday().num_days_from_sunday() as i32;
 
-        info!("Checking for due reminders. Current time: {}, Current day: {}", now.format("%Y-%m-%d %H:%M:%S %Z"), current_day);
-
         let query = "
             SELECT id, guild_id, channel_id, message, time, days, frequency, last_sent
             FROM reminders
@@ -305,36 +301,19 @@ impl Database {
                 )
             )";
 
-        debug!("Executing query: {}", query);
-        debug!("Query parameters: current_day={}, current_time={}, current_date={}",
-               current_day, current_time, now.date_naive());
-
         let rows = self.client
             .query(query, &[&current_day, &current_time, &now.date_naive()])
             .await?;
 
-        info!("Query returned {} rows", rows.len());
-
         let reminders: Vec<_> = rows.iter().map(|row| {
-            let id: i32 = row.get(0);
-            let guild_id: i64 = row.get(1);
-            let channel_id: i64 = row.get(2);
-            let message: String = row.get(3);
-            let time: NaiveTime = row.get(4);
-            let days: Vec<i32> = row.get(5);
-            let frequency: String = row.get(6);
-            let last_sent: Option<DateTime<Utc>> = row.get(7);
-
-            debug!("Found reminder: id={}, guild_id={}, channel_id={}, time={}, days={:?}, frequency={}, last_sent={:?}",
-               id, guild_id, channel_id, time, days, frequency, last_sent);
-
             Reminder {
-                id,
-                guild_id,
-                channel_id,
-                message,
-                time,
-                days: days.into_iter()
+                id: row.get(0),
+                guild_id: row.get(1),
+                channel_id: row.get(2),
+                message: row.get(3),
+                time: row.get(4),
+                days: row.get::<_, Vec<i32>>(5)
+                    .into_iter()
                     .map(|d| match d {
                         0 => Weekday::Sun,
                         1 => Weekday::Mon,
@@ -343,21 +322,13 @@ impl Database {
                         4 => Weekday::Thu,
                         5 => Weekday::Fri,
                         6 => Weekday::Sat,
-                        _ => {
-                            error!("Unexpected day value: {}", d);
-                            Weekday::Sun // Default to Sunday for any unexpected values
-                        }
+                        _ => Weekday::Sun
                     })
                     .collect(),
-                frequency: Frequency::from_str(&frequency).unwrap_or_else(|_| {
-                    error!("Invalid frequency: {}", frequency);
-                    Frequency::Daily
-                }),
-                last_sent,
+                frequency: Frequency::from_str(&row.get::<_, String>(6)).unwrap_or(Frequency::Daily),
+                last_sent: row.get(7),
             }
         }).collect();
-
-        debug!("Returning {} due reminders", reminders.len());
 
         Ok(reminders)
     }
