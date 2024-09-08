@@ -1,7 +1,7 @@
 // commands/warn.rs
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{Member, ChannelId};
+use poise::serenity_prelude::{ChannelId, Member};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 

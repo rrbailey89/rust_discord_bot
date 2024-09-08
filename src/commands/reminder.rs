@@ -2,9 +2,9 @@
 
 use crate::error::Error;
 use crate::Data;
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
 use poise::serenity_prelude::{ChannelId, CreateEmbed};
-use chrono::{DateTime, Utc, NaiveTime, Weekday};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 

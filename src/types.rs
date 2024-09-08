@@ -1,7 +1,7 @@
-// src/types.rs
-use chrono::NaiveTime;
-use postgres_types::{FromSql, ToSql, Type, IsNull, accepts, to_sql_checked};
 use bytes::BytesMut;
+
+use chrono::NaiveTime;
+use postgres_types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
 use std::error::Error;
 
 #[derive(Debug, Clone, Copy)]

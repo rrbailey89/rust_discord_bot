@@ -1,12 +1,11 @@
-// database.rs
-use tokio_postgres::{Client, NoTls};
+use crate::commands::reminder::{Frequency, Reminder};
 use crate::error::Error;
-use poise::serenity_prelude::{Guild, UserId, ChannelType};
-use crate::commands::reminder::{Reminder, Frequency};
 use chrono::{Datelike, Utc, Weekday};
-use std::sync::Arc;
-use std::str::FromStr;
 use chrono_tz::America::Los_Angeles;
+use poise::serenity_prelude::{ChannelType, Guild, UserId};
+use std::str::FromStr;
+use std::sync::Arc;
+use tokio_postgres::{Client, NoTls};
 
 #[derive(Clone)]
 pub struct Database {

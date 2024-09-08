@@ -1,7 +1,7 @@
 // commands/anime_hug.rs
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{User, CreateEmbed, Mentionable};
+use poise::serenity_prelude::{CreateEmbed, Mentionable, User};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
