@@ -22,7 +22,7 @@ impl fmt::Display for Frequency {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Reminder {
-    pub id: i32,  // Add this line
+    pub id: i32,
     pub guild_id: i64,
     pub channel_id: i64,
     pub message: String,
@@ -38,6 +38,7 @@ pub enum Frequency {
     Weekly,
     Monthly,
 }
+
 impl FromStr for Frequency {
     type Err = String;
 
@@ -50,6 +51,7 @@ impl FromStr for Frequency {
         }
     }
 }
+
 #[poise::command(slash_command, subcommands("create", "list", "delete"))]
 pub async fn reminder(_ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
