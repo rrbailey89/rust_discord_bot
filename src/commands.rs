@@ -13,6 +13,9 @@ mod ping;
 mod toggle_emoji_reactions;
 mod createimage;
 pub(crate) mod reminder;
+mod help;
+mod weather;
+mod blame_serena;
 
 use crate::error::Error;
 use crate::Data;
@@ -20,6 +23,7 @@ use poise::serenity_prelude::Permissions;
 
 pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
     vec![
+        help::help(),
         warn::warn(),
         set_warn_channel::setwarnchannel(),
         random_cat_image::randomcatimage(),
@@ -38,5 +42,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         toggle_emoji_reactions::toggleemojireactions(),
         createimage::createimage(),
         reminder::reminder(),
+        weather::weather(),
+        blame_serena::blameserena(),
     ]
 }

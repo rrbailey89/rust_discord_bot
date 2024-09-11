@@ -342,4 +342,17 @@ impl Database {
         Ok(())
     }
 
+    pub async fn increment_blame_count(&self) -> Result<i32, Error> {
+        let row = self.client
+            .query_one(
+                "INSERT INTO blame_count (count) VALUES (1)
+                 ON CONFLICT (id) DO UPDATE SET count = blame_count.count + 1
+                 RETURNING count",
+                &[],
+            )
+            .await?;
+
+        Ok(row.get(0))
+    }
+
 }
