@@ -8,6 +8,7 @@ pub struct Config {
     pub bot_token: String,
     pub database_url: String,
     pub openai_api_key: String,
+    pub openweather_api_key: String,
 }
 
 

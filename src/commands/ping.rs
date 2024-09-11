@@ -3,6 +3,7 @@ use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use psutil::process::Process;
 use std::time::Instant;
 
+/// Ping command to measure bot latency and other metrics.
 #[poise::command(slash_command)]
 pub async fn ping(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let start_time = Instant::now();
