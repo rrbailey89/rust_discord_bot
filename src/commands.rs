@@ -43,6 +43,6 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         createimage::createimage(),
         reminder::reminder(),
         weather::weather(),
-        blame_serena::blameserena(),
+        blame_serena::blame(),
     ]
 }

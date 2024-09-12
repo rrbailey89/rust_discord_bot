@@ -9,6 +9,7 @@ pub struct Config {
     pub database_url: String,
     pub openai_api_key: String,
     pub openweather_api_key: String,
+    pub serena_user_id: String,
 }
 
 
