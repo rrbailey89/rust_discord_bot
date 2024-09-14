@@ -16,6 +16,7 @@ pub(crate) mod reminder;
 mod help;
 mod weather;
 mod blame_serena;
+mod rules;
 
 use crate::error::Error;
 use crate::Data;
@@ -44,5 +45,6 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         reminder::reminder(),
         weather::weather(),
         blame_serena::blame(),
+        rules::rule(),
     ]
 }

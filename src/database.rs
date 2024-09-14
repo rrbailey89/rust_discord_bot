@@ -362,5 +362,41 @@ impl Database {
 
         Ok((row.get(0), row.get(1)))
     }
+    pub async fn add_rule(&self, guild_id: i64, rule: &str) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO guild_rules (guild_id, rule) VALUES ($1, $2)",
+                &[&guild_id, &rule],
+            )
+            .await?;
+        Ok(())
+    }
 
+    pub async fn remove_rule(&self, guild_id: i64, rule_number: i64) -> Result<(), Error> {
+        self.client
+            .execute(
+                "DELETE FROM guild_rules WHERE guild_id = $1 AND id = (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (ORDER BY id) as row_num
+                        FROM guild_rules
+                        WHERE guild_id = $1
+                    ) t
+                    WHERE t.row_num = $2
+                )",
+                &[&guild_id, &rule_number],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_rules(&self, guild_id: i64) -> Result<Vec<String>, Error> {
+        let rows = self.client
+            .query(
+                "SELECT rule FROM guild_rules WHERE guild_id = $1 ORDER BY id",
+                &[&guild_id],
+            )
+            .await?;
+
+        Ok(rows.iter().map(|row| row.get(0)).collect())
+    }
 }
