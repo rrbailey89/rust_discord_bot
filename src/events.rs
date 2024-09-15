@@ -1,7 +1,7 @@
 use crate::emoji_reaction::handle_message;
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId};
+use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId, Message};
 use poise::FrameworkContext;
 
 pub async fn handle_event(
@@ -26,6 +26,7 @@ pub async fn handle_event(
         FullEvent::Message { new_message } => {
             if !new_message.author.bot {
                 handle_message(ctx, framework, data, new_message).await?;
+                handle_message_for_leveling(ctx, new_message, data).await?;
             }
         }
         _ => {}
@@ -136,4 +137,38 @@ async fn handle_message_delete_bulk(
         }
     }
     Ok(())
+}
+
+async fn handle_message_for_leveling(ctx: &Context, msg: &Message, data: &Data) -> Result<(), Error> {
+    if msg.author.bot {
+        return Ok(());
+    }
+
+    let guild_id = msg.guild_id.ok_or_else(|| Error::Unknown("Not a guild message".to_string()))?;
+    let user_id = msg.author.id;
+
+    let (mut current_level, current_exp) = data.database.get_user_level(guild_id.get() as i64, user_id.get() as i64).await?;
+    let new_exp = current_exp + 1;
+
+    // Check if the user should level up
+    while new_exp >= calculate_required_exp(current_level + 1) {
+        current_level += 1;
+
+        if let Some(channel_id) = data.database.get_level_up_channel(guild_id.get() as i64).await? {
+            let channel = ChannelId::new(channel_id as u64);
+            channel.say(&ctx.http, format!(
+                "🎉 Congratulations <@{}>! You've reached level {}!",
+                user_id, current_level
+            )).await?;
+        }
+    }
+
+    // Update the database with the new level and total experience
+    data.database.update_user_level_and_exp(guild_id.get() as i64, user_id.get() as i64, current_level, new_exp).await?;
+
+    Ok(())
+}
+
+fn calculate_required_exp(level: i32) -> i32 {
+    (10.0 * (1.5f64.powi(level - 1))).round() as i32
 }

@@ -399,4 +399,78 @@ impl Database {
 
         Ok(rows.iter().map(|row| row.get(0)).collect())
     }
+    pub async fn get_user_level(&self, guild_id: i64, user_id: i64) -> Result<(i32, i32), Error> {
+        let row = self.client
+            .query_one(
+                "INSERT INTO user_levels (guild_id, user_id, level, experience)
+                 VALUES ($1, $2, 1, 0)
+                 ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                 guild_id = EXCLUDED.guild_id
+                 RETURNING level, experience",
+                &[&guild_id, &user_id],
+            )
+            .await?;
+
+        Ok((row.get(0), row.get(1)))
+    }
+
+    pub async fn update_user_experience(&self, guild_id: i64, user_id: i64, new_exp: i32) -> Result<(i32, i32), Error> {
+        let row = self.client
+            .query_one(
+                "UPDATE user_levels SET experience = $3
+                 WHERE guild_id = $1 AND user_id = $2
+                 RETURNING level, experience",
+                &[&guild_id, &user_id, &new_exp],
+            )
+            .await?;
+
+        Ok((row.get(0), row.get(1)))
+    }
+
+    pub async fn set_user_level(&self, guild_id: i64, user_id: i64, new_level: i32) -> Result<(), Error> {
+        self.client
+            .execute(
+                "UPDATE user_levels SET level = $3
+                 WHERE guild_id = $1 AND user_id = $2",
+                &[&guild_id, &user_id, &new_level],
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_level_up_channel(&self, guild_id: i64) -> Result<Option<i64>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT channel_id FROM level_up_channels WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
+    }
+
+    pub async fn set_level_up_channel(&self, guild_id: i64, channel_id: i64) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO level_up_channels (guild_id, channel_id)
+                 VALUES ($1, $2)
+                 ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id",
+                &[&guild_id, &channel_id],
+            )
+            .await?;
+
+        Ok(())
+    }
+    pub async fn update_user_level_and_exp(&self, guild_id: i64, user_id: i64, new_level: i32, new_exp: i32) -> Result<(), Error> {
+        self.client
+            .execute(
+                "UPDATE user_levels SET level = $3, experience = $4
+                 WHERE guild_id = $1 AND user_id = $2",
+                &[&guild_id, &user_id, &new_level, &new_exp],
+            )
+            .await?;
+
+        Ok(())
+    }
 }

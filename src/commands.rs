@@ -17,6 +17,7 @@ mod help;
 mod weather;
 mod blame_serena;
 mod rules;
+mod set_level_up_channel;
 
 use crate::error::Error;
 use crate::Data;
@@ -46,5 +47,6 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         weather::weather(),
         blame_serena::blame(),
         rules::rule(),
+        set_level_up_channel::setlevelupchannel(),
     ]
 }
