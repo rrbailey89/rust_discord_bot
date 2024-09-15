@@ -18,6 +18,7 @@ mod weather;
 mod blame_serena;
 mod rules;
 mod set_level_up_channel;
+pub(crate) mod add_role_buttons;
 
 use crate::error::Error;
 use crate::Data;
@@ -48,5 +49,6 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         blame_serena::blame(),
         rules::rule(),
         set_level_up_channel::setlevelupchannel(),
+        add_role_buttons::rolebuttons(),
     ]
 }

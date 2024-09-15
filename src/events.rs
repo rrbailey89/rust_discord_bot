@@ -1,8 +1,9 @@
 use crate::emoji_reaction::handle_message;
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId, Message};
+use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId, Message, Interaction};
 use poise::FrameworkContext;
+use crate::commands::add_role_buttons::handle_role_button;
 
 pub async fn handle_event(
     ctx: &Context,
@@ -27,6 +28,13 @@ pub async fn handle_event(
             if !new_message.author.bot {
                 handle_message(ctx, framework, data, new_message).await?;
                 handle_message_for_leveling(ctx, new_message, data).await?;
+            }
+        }
+        FullEvent::InteractionCreate { interaction } => {
+            if let Interaction::Component(component) = interaction {
+                if component.data.custom_id.starts_with("role_") {
+                    handle_role_button(ctx, component).await?;
+                }
             }
         }
         _ => {}
