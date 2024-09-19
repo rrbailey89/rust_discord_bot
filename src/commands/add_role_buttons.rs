@@ -10,11 +10,14 @@ use poise::{
     CreateReply,
 };
 use std::str::FromStr;
-use std::collections::HashSet;
+use serde::{Serialize, Deserialize};
+use crate::types::DataContainer;
+use serde_json::Value;
+use tracing::{info, debug, error};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-#[derive(poise::ChoiceParameter, Clone, Copy)]
+#[derive(poise::ChoiceParameter, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ButtonStyle {
     Primary,
     Secondary,
@@ -33,6 +36,15 @@ impl From<ButtonStyle> for SerenityButtonStyle {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ButtonInfo {
+    label: String,
+    style: ButtonStyle,
+    emoji: Option<String>,
+    role_id: Option<String>,
+    nested_buttons: Option<Vec<ButtonInfo>>,
+}
+
 /// Add or remove role assignment buttons to a message
 #[poise::command(slash_command, subcommands("add", "remove"))]
 pub async fn rolebuttons(_ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
@@ -45,78 +57,25 @@ pub async fn add(
     ctx: Context<'_>,
     #[description = "Channel where the message is located"] channel: ChannelId,
     #[description = "ID of the message to add buttons to"] message_id: MessageId,
-    #[description = "Comma-separated list of role IDs"] roles: String,
-    #[description = "Comma-separated list of button labels"] labels: String,
-    #[description = "Comma-separated list of button styles (Primary, Secondary, Success, Danger)"] styles: String,
-    #[description = "Comma-separated list of button emojis (optional)"] emojis: Option<String>, // Added parameter
+    #[description = "JSON string of button configurations"] button_config: String,
 ) -> Result<(), Error> {
+    let guild_id = ctx.guild_id()
+        .ok_or_else(|| Error::Unknown("This command can only be used in a server".to_string()))?;
+
+    let button_info: Vec<ButtonInfo> = serde_json::from_str(&button_config)
+        .map_err(|e| Error::Unknown(format!("Invalid button configuration: {}", e)))?;
+
+    // Validate JSON by parsing it
+    let _: Value = serde_json::from_str(&button_config)
+        .map_err(|e| Error::Unknown(format!("Invalid button configuration: {}", e)))?;
+
+    ctx.data().database.create_button_config(
+        guild_id.get() as i64,
+        message_id.get() as i64,
+        &button_config
+    ).await?;
+
     let message = channel.message(&ctx.http(), message_id).await?;
-
-    let role_ids: Vec<RoleId> = roles
-        .split(',')
-        .map(|id| RoleId::from_str(id.trim()).map_err(|_| Error::Unknown("Invalid role ID".to_string())))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let button_labels: Vec<String> = labels.split(',').map(|s| s.trim().to_string()).collect();
-    let button_styles: Vec<ButtonStyle> = styles
-        .split(',')
-        .map(|s| match s.trim().to_lowercase().as_str() {
-            "primary" => Ok(ButtonStyle::Primary),
-            "secondary" => Ok(ButtonStyle::Secondary),
-            "success" => Ok(ButtonStyle::Success),
-            "danger" => Ok(ButtonStyle::Danger),
-            _ => Err(Error::Unknown("Invalid button style".to_string())),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let button_emojis: Vec<String> = emojis
-        .map(|e| e.split(',').map(|s| s.trim().to_string()).collect())
-        .unwrap_or_default();
-
-    if !button_emojis.is_empty() && (
-        button_emojis.len() != role_ids.len() ||
-            button_emojis.len() != button_labels.len() ||
-            button_emojis.len() != button_styles.len()
-    ) {
-        return Err(Error::Unknown("The number of emojis must match the number of roles, labels, and styles".to_string()));
-    }
-
-    if role_ids.len() != button_labels.len() || role_ids.len() != button_styles.len() {
-        return Err(Error::Unknown("The number of roles, labels, and styles must be the same".to_string()));
-    }
-
-    // Collect existing custom_ids to prevent duplicates
-    let existing_custom_ids: HashSet<String> = message.components.iter()
-        .flat_map(|row| &row.components)
-        .filter_map(|component| {
-            if let ActionRowComponent::Button(button) = component {
-                if let ButtonKind::NonLink { custom_id, .. } = &button.data {
-                    Some(custom_id.clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let mut new_buttons = Vec::new();
-    for (i, ((role, label), style)) in role_ids.iter().zip(button_labels.iter()).zip(button_styles.iter()).enumerate() {
-        let custom_id = format!("role_button:{}", role);
-        if existing_custom_ids.contains(&custom_id) {
-            return Err(Error::Unknown(format!("Button with custom_id '{}' already exists", custom_id)));
-        }
-        let mut button = CreateButton::new(custom_id)
-            .label(label)
-            .style((*style).into());
-        if !button_emojis.is_empty() {
-            let emoji = parse_emoji(&button_emojis[i])?;
-            button = button.emoji(emoji);
-        }
-        new_buttons.push(button);
-    }
-
     let mut components = Vec::new();
 
     for row in &message.components {
@@ -142,13 +101,46 @@ pub async fn add(
         }
     }
 
-    components.push(CreateActionRow::Buttons(new_buttons));
+    let new_buttons = create_buttons(&button_info, 0)?;
+    components.extend(new_buttons);
 
     channel.edit_message(&ctx.http(), message_id, EditMessage::new().components(components)).await?;
 
     ctx.say("Role assignment buttons added successfully!").await?;
 
     Ok(())
+}
+
+fn create_buttons(button_info: &[ButtonInfo], depth: usize) -> Result<Vec<CreateActionRow>, Error> {
+    let mut rows = Vec::new();
+    let mut current_row = Vec::new();
+
+    for (i, button) in button_info.iter().enumerate() {
+        let custom_id = if button.nested_buttons.is_some() {
+            format!("nested_button:{}:{}", depth, i)
+        } else if let Some(role_id) = &button.role_id {
+            format!("role_button:{}:{}", depth, role_id)
+        } else {
+            return Err(Error::Unknown("Button must have either nested_buttons or role_id".to_string()));
+        };
+
+        let mut new_button = CreateButton::new(custom_id)
+            .label(&button.label)
+            .style(button.style.into());
+
+        if let Some(emoji) = &button.emoji {
+            new_button = new_button.emoji(parse_emoji(emoji)?);
+        }
+
+        current_row.push(new_button);
+
+        if current_row.len() == 5 || i == button_info.len() - 1 {
+            rows.push(CreateActionRow::Buttons(current_row.clone()));
+            current_row.clear();
+        }
+    }
+
+    Ok(rows)
 }
 
 /// Remove all buttons from a message
@@ -169,38 +161,144 @@ pub async fn remove(
 
     Ok(())
 }
+
 pub async fn handle_role_button(
     ctx: &SerenityContext,
     interaction: &ComponentInteraction,
 ) -> Result<(), Error> {
     let custom_id = &interaction.data.custom_id;
-    if let Some(role_id_str) = custom_id.strip_prefix("role_button:") {
-        let role_id = RoleId::from_str(role_id_str).map_err(|_| Error::Unknown("Invalid role ID".to_string()))?;
-        let guild_id = interaction.guild_id.ok_or_else(|| Error::Unknown("Not in a guild".to_string()))?;
-        let member = guild_id.member(&ctx.http, interaction.user.id).await?;
+    let parts: Vec<&str> = custom_id.split(':').collect();
 
-        let (action, message) = if member.roles.contains(&role_id) {
-            member.remove_role(&ctx.http, role_id).await?;
-            ("removed", format!("Role <@&{}> removed", role_id))
-        } else {
-            member.add_role(&ctx.http, role_id).await?;
-            ("added", format!("Role <@&{}> added", role_id))
-        };
+    match parts[0] {
+        "nested_button" => {
+            let depth: usize = parts[1].parse().map_err(|_| Error::Unknown("Invalid depth".to_string()))?;
+            let button_index: usize = parts[2].parse().map_err(|_| Error::Unknown("Invalid button index".to_string()))?;
 
-        interaction
-            .create_response(&ctx.http, CreateInteractionResponse::Message(
-                CreateInteractionResponseMessage::new()
-                    .content(message)
-                    .flags(InteractionResponseFlags::EPHEMERAL)
-            ))
-            .await?;
+            let nested_buttons = fetch_nested_buttons(ctx, interaction, depth, button_index).await?;
 
-        // Log the role change
-        println!("Role {} {} for user {}", role_id, action, interaction.user.id);
+            if !nested_buttons.is_empty() {
+                let buttons_to_display = if depth == 0 {
+                    // If we're at the root level, we want to display the nested buttons of the first (and only) button
+                    nested_buttons[0].nested_buttons.as_ref()
+                        .ok_or_else(|| Error::Unknown("No nested buttons found".to_string()))?
+                } else {
+                    &nested_buttons
+                };
+
+                let new_buttons = create_buttons(buttons_to_display, depth + 1)?;
+
+                interaction
+                    .create_response(&ctx.http, CreateInteractionResponse::Message(
+                        CreateInteractionResponseMessage::new()
+                            .content("Here are your options:")
+                            .components(new_buttons)
+                            .flags(InteractionResponseFlags::EPHEMERAL)
+                    ))
+                    .await?;
+            } else {
+                // If no nested buttons are found, inform the user
+                interaction
+                    .create_response(&ctx.http, CreateInteractionResponse::Message(
+                        CreateInteractionResponseMessage::new()
+                            .content("No options available for this button.")
+                            .flags(InteractionResponseFlags::EPHEMERAL)
+                    ))
+                    .await?;
+            }
+        }
+        "role_button" => {
+            handle_role_assignment(ctx, interaction, parts[2]).await?;
+        }
+        _ => return Err(Error::Unknown("Invalid button type".to_string())),
     }
 
     Ok(())
 }
+
+async fn handle_role_assignment(
+    ctx: &SerenityContext,
+    interaction: &ComponentInteraction,
+    role_id_str: &str,
+) -> Result<(), Error> {
+    let role_id = RoleId::from_str(role_id_str).map_err(|_| Error::Unknown("Invalid role ID".to_string()))?;
+    let guild_id = interaction.guild_id.ok_or_else(|| Error::Unknown("Not in a guild".to_string()))?;
+    let member = guild_id.member(&ctx.http, interaction.user.id).await?;
+
+    let (action, message) = if member.roles.contains(&role_id) {
+        member.remove_role(&ctx.http, role_id).await?;
+        ("removed", format!("Role <@&{}> removed", role_id))
+    } else {
+        member.add_role(&ctx.http, role_id).await?;
+        ("added", format!("Role <@&{}> added", role_id))
+    };
+
+    interaction
+        .create_response(&ctx.http, CreateInteractionResponse::Message(
+            CreateInteractionResponseMessage::new()
+                .content(&message)
+                .flags(InteractionResponseFlags::EPHEMERAL)
+        ))
+        .await?;
+
+    info!("Role {} {} for user {}", role_id, action, interaction.user.id);
+
+    Ok(())
+}
+
+async fn fetch_nested_buttons(
+    ctx: &SerenityContext,
+    interaction: &ComponentInteraction,
+    depth: usize,
+    button_index: usize,
+) -> Result<Vec<ButtonInfo>, Error> {
+    let guild_id = interaction.guild_id.ok_or_else(|| Error::Unknown("Not in a guild".to_string()))?;
+    let message_id = interaction.message.id;
+
+    let data_lock = ctx.data.read().await;
+    let data = data_lock
+        .get::<DataContainer>()
+        .ok_or_else(|| Error::Unknown("Failed to get bot data".to_string()))?
+        .clone();
+
+    let nested_buttons_json = data
+        .database
+        .get_nested_buttons(
+            guild_id.get() as i64,
+            message_id.get() as i64,
+            depth as i32,
+            button_index as i32,
+        )
+        .await?;
+
+    debug!("Retrieved nested buttons JSON: {:?}", nested_buttons_json);
+
+    match nested_buttons_json {
+        Some(json_value) => {
+            let nested_buttons: Vec<ButtonInfo> = if depth == 0 {
+                // For root level, parse the entire config
+                json_value.as_array()
+                    .ok_or_else(|| Error::Unknown("Root config is not an array".to_string()))?
+                    .iter()
+                    .filter_map(|button| serde_json::from_value(button.clone()).ok())
+                    .collect()
+            } else {
+                // For nested levels, parse the nested buttons
+                json_value.as_array()
+                    .ok_or_else(|| Error::Unknown("Nested buttons are not an array".to_string()))?
+                    .iter()
+                    .filter_map(|button| serde_json::from_value(button.clone()).ok())
+                    .collect()
+            };
+            debug!("Parsed nested buttons: {:?}", nested_buttons);
+            Ok(nested_buttons)
+        }
+        None => {
+            error!("No nested buttons found for depth {} and index {}", depth, button_index);
+            Ok(vec![])
+        }
+    }
+}
+
 fn parse_emoji(emoji_str: &str) -> Result<ReactionType, Error> {
     if emoji_str.starts_with('<') && emoji_str.ends_with('>') {
         let content = &emoji_str[1..emoji_str.len()-1];
