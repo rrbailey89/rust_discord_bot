@@ -17,6 +17,8 @@ use serenity::GatewayIntents;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 use tracing::Level;
+use crate::types::ShardManagerContainer;
+use crate::types::DataContainer;
 
 #[derive(Clone)]
 pub struct Data {
@@ -57,37 +59,55 @@ async fn main() -> Result<(), Error> {
             },
             ..Default::default()
         })
-        .setup(|ctx, _ready, framework| {
+        .setup(move |ctx, _ready, framework| {
+            let config_clone = config_clone.clone();
+            let database = database.clone();
+
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
-                let ctx_clone = ctx.clone();
-                let data_clone = Data {
+                let data = Data {
                     config: config_clone.clone().into(),
                     database: database.clone(),
                 };
+
+                // Insert Data into TypeMap
+                {
+                    let mut data_map = ctx.data.write().await;
+                    data_map.insert::<DataContainer>(data.clone());
+                }
+
+                // Clone Data for the spawned task
+                let data_for_task = data.clone();
+                let ctx_clone = ctx.clone();
 
                 tokio::spawn(async move {
                     let mut interval = interval(Duration::from_secs(15));
                     loop {
                         interval.tick().await;
-                        if let Err(e) = check_and_send_reminders(&ctx_clone, &data_clone).await {
+                        if let Err(e) = check_and_send_reminders(&ctx_clone, &data_for_task).await {
                             eprintln!("Error sending reminders: {:?}", e);
                         }
                     }
                 });
 
-                Ok(Data {
-                    config: config_clone.into(),
-                    database,
-                })
+                Ok(data)
             })
         })
         .build();
 
-    let mut client = serenity::ClientBuilder::new(&config.bot_token, GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT)
+    let mut client = serenity::ClientBuilder::new(
+        &config.bot_token,
+        GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
+    )
         .framework(framework)
         .await?;
+
+    {
+        let mut data_map = client.data.write().await;
+        data_map.insert::<ShardManagerContainer>(Arc::clone(&client.shard_manager));
+        // Data is inserted via the setup closure
+    }
 
     client.cache.set_max_messages(1000);
 

@@ -1,47 +1,42 @@
 use crate::{error::Error, Data};
 use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use psutil::process::Process;
-use std::time::Instant;
+use crate::types::ShardManagerContainer;
 
 /// Ping command to measure bot latency and other metrics.
 #[poise::command(slash_command)]
 pub async fn ping(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    let start_time = Instant::now();
+    let cache = ctx.serenity_context().cache.clone();
+    let guild_count = cache.guilds().len();
 
-    // Get the number of guilds
-    let guild_count = ctx.cache().guilds().len();
-
-    // Measure API latency
-    let api_latency = {
-        let message = ctx.say("Measuring latency...").await?;
-        let latency = start_time.elapsed().as_millis();
-        message.edit(ctx, CreateReply::default().content("Pong!")).await?;
-        latency
-    };
-
-    // Get application memory usage
     let memory_usage = {
         let process = Process::current().map_err(|e| Error::Unknown(format!("Failed to get current process: {}", e)))?;
         let memory_info = process.memory_info().map_err(|e| Error::Unknown(format!("Failed to get memory info: {}", e)))?;
-        memory_info.rss() / 1024 / 1024 // Convert to MB
+        memory_info.rss() / 1024 / 1024
     };
 
-    // Get cache size
-    let cache_size = {
-        let cache = ctx.cache();
-        let guilds = cache.guilds().len();
-        let channels = cache.guild_channel_count();
-        let users = cache.users().len();
-        guilds + channels + users
+    let shard_manager = {
+        let data = ctx.serenity_context().data.read().await;
+        data.get::<ShardManagerContainer>()
+            .cloned()
+            .ok_or_else(|| Error::Unknown("Failed to retrieve Shard Manager.".into()))?
     };
 
-    // Create and send embed
+    let shard_id = ctx.serenity_context().shard_id;
+
+    let gateway_latency = {
+        let runners = shard_manager.runners.lock().await;
+        runners.get(&shard_id)
+            .and_then(|runner_info| runner_info.latency)
+            .map(|latency| latency.as_millis())
+            .unwrap_or(0)
+    };
+
     let embed = CreateEmbed::default()
         .title("Pong! 🏓")
         .field("Guilds", guild_count.to_string(), true)
-        .field("API Latency", format!("{}ms", api_latency), true)
+        .field("Gateway Latency", format!("{}ms", gateway_latency), true)
         .field("Memory Usage", format!("{}MB", memory_usage), true)
-        .field("Cache Size", cache_size.to_string(), true)
         .color(0x00FF00);
 
     ctx.send(CreateReply::default().embed(embed)).await?;

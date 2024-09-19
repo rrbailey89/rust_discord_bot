@@ -19,6 +19,8 @@ mod blame_serena;
 mod rules;
 mod set_level_up_channel;
 pub(crate) mod add_role_buttons;
+mod set_url_rule;
+mod is_alive;
 
 use crate::error::Error;
 use crate::Data;
@@ -50,5 +52,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         rules::rule(),
         set_level_up_channel::setlevelupchannel(),
         add_role_buttons::rolebuttons(),
+        set_url_rule::seturlrule(),
+        is_alive::lifecheck(),
     ]
 }

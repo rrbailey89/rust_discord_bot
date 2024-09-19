@@ -1,9 +1,10 @@
 use crate::emoji_reaction::handle_message;
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId, Message, Interaction};
+use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId, Message, Interaction, Reaction, ReactionType, CreateEmbedAuthor};
 use poise::FrameworkContext;
 use crate::commands::add_role_buttons::handle_role_button;
+use regex::Regex;
 
 pub async fn handle_event(
     ctx: &Context,
@@ -28,14 +29,18 @@ pub async fn handle_event(
             if !new_message.author.bot {
                 handle_message(ctx, framework, data, new_message).await?;
                 handle_message_for_leveling(ctx, new_message, data).await?;
+                process_url_rule(ctx, data, new_message).await?;
             }
         }
         FullEvent::InteractionCreate { interaction } => {
             if let Interaction::Component(component) = interaction {
-                if component.data.custom_id.starts_with("role_") {
+                if component.data.custom_id.starts_with("role_") || component.data.custom_id.starts_with("nested_") {
                     handle_role_button(ctx, component).await?;
                 }
             }
+        }
+        FullEvent::ReactionAdd { add_reaction } => {
+            handle_reaction_add(ctx, add_reaction).await?;
         }
         _ => {}
     }
@@ -176,7 +181,64 @@ async fn handle_message_for_leveling(ctx: &Context, msg: &Message, data: &Data) 
 
     Ok(())
 }
-
+async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), Error> {
+    if reaction.emoji == ReactionType::Unicode("⭐".to_string()) {
+        handle_star_reaction(ctx, reaction).await?;
+    }
+    Ok(())
+}
 fn calculate_required_exp(level: i32) -> i32 {
     (10.0 * (1.5f64.powi(level - 1))).round() as i32
+}
+
+async fn handle_star_reaction(ctx: &Context, reaction: &Reaction) -> Result<(), Error> {
+    let channel = reaction.channel_id;
+    let message_id = reaction.message_id;
+
+    // Fetch the original message
+    let message = channel.message(&ctx.http, message_id).await?;
+
+    // Create the embed
+    let embed = CreateEmbed::default()
+        .title("You're a Star! ⭐")
+        .description(&message.content)
+        .author(CreateEmbedAuthor::new(&message.author.name)
+            .icon_url(message.author.face()))
+        .footer(CreateEmbedFooter::new(format!("Original message ID: {}", message_id)))
+        .timestamp(message.timestamp);
+
+    // If the original message has an image, add it to the embed
+    let embed = if let Some(attachment) = message.attachments.first() {
+        if attachment.width.is_some() {  // This checks if it's an image
+            embed.image(&attachment.url)
+        } else {
+            embed
+        }
+    } else {
+        embed
+    };
+
+    // Send the embed in the same channel
+    channel.send_message(&ctx.http, CreateMessage::default()
+        .add_embed(embed)
+    ).await?;
+
+    Ok(())
+}
+async fn process_url_rule(ctx: &Context, data: &Data, message: &Message) -> Result<(), Error> {
+    if let Some(guild_id) = message.guild_id {
+        if let Some(rule) = data.database.get_url_rule(guild_id.get() as i64, message.channel_id.get() as i64).await? {
+            let re = Regex::new(&rule.regex).map_err(|_| Error::Unknown("Invalid regex pattern".into()))?;
+            if let Some(captures) = re.captures(&message.content) {
+                let mut output = rule.output_template.clone();
+                for (i, capture) in captures.iter().enumerate().skip(1) {
+                    if let Some(c) = capture {
+                        output = output.replace(&format!("${}", i), c.as_str());
+                    }
+                }
+                message.channel_id.say(&ctx.http, &output).await?;
+            }
+        }
+    }
+    Ok(())
 }

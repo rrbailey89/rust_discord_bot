@@ -6,6 +6,8 @@ use poise::serenity_prelude::{ChannelType, Guild, UserId};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio_postgres::{Client, NoTls};
+use crate::types::UrlRule;
+use serde_json::Value;
 
 #[derive(Clone)]
 pub struct Database {
@@ -472,5 +474,98 @@ impl Database {
             .await?;
 
         Ok(())
+    }
+    pub async fn store_url_rule(&self, rule: &UrlRule) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO url_rules (guild_id, channel_id, regex, output_template)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+                 regex = EXCLUDED.regex,
+                 output_template = EXCLUDED.output_template",
+                &[&rule.guild_id, &rule.channel_id, &rule.regex, &rule.output_template],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_url_rule(&self, guild_id: i64, channel_id: i64) -> Result<Option<UrlRule>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT regex, output_template FROM url_rules WHERE guild_id = $1 AND channel_id = $2",
+                &[&guild_id, &channel_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| UrlRule {
+            guild_id,
+            channel_id,
+            regex: r.get(0),
+            output_template: r.get(1),
+        }))
+    }
+    pub async fn create_button_config(&self, guild_id: i64, message_id: i64, config: &str) -> Result<(), Error> {
+        let config_json: Value = serde_json::from_str(config)
+            .map_err(|e| Error::Unknown(format!("Invalid JSON configuration: {}", e)))?;
+
+        self.client
+            .execute(
+                "INSERT INTO button_configs (guild_id, message_id, config)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (guild_id, message_id) DO UPDATE SET config = EXCLUDED.config",
+                &[&guild_id, &message_id, &config_json],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_button_config(&self, guild_id: i64, message_id: i64) -> Result<Option<String>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT config FROM button_configs WHERE guild_id = $1 AND message_id = $2",
+                &[&guild_id, &message_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
+    }
+
+    pub async fn get_nested_buttons(&self, guild_id: i64, message_id: i64, depth: i32, button_index: i32) -> Result<Option<Value>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT config FROM button_configs WHERE guild_id = $1 AND message_id = $2",
+                &[&guild_id, &message_id],
+            )
+            .await?;
+
+        match row {
+            Some(row) => {
+                let config: Value = row.get(0);
+                if depth == 0 {
+                    // For root level, return the entire config
+                    Ok(Some(config))
+                } else {
+                    // For nested levels, navigate through the JSON
+                    let mut current = &config;
+                    for _ in 0..depth {
+                        if let Some(buttons) = current.as_array() {
+                            if button_index < buttons.len() as i32 {
+                                if let Some(nested) = buttons[button_index as usize].get("nested_buttons") {
+                                    current = nested;
+                                } else {
+                                    return Ok(None);
+                                }
+                            } else {
+                                return Ok(None);
+                            }
+                        } else {
+                            return Ok(None);
+                        }
+                    }
+                    Ok(Some(current.clone()))
+                }
+            }
+            None => Ok(None),
+        }
     }
 }

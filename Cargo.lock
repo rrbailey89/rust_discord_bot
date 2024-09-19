@@ -884,12 +884,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
-name = "heck"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
-
-[[package]]
 name = "hermit-abi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1602,18 +1596,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "postgres-derive"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83145eba741b050ef981a9a1838c843fa7665e154383325aa8b440ae703180a2"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 2.0.75",
-]
-
-[[package]]
 name = "postgres-protocol"
 version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1640,8 +1622,9 @@ dependencies = [
  "bytes",
  "chrono",
  "fallible-iterator",
- "postgres-derive",
  "postgres-protocol",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1993,6 +1976,7 @@ dependencies = [
  "postgres-types",
  "psutil",
  "rand",
+ "regex",
  "reqwest 0.12.7",
  "serde",
  "serde_json",
