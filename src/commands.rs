@@ -21,6 +21,8 @@ mod set_level_up_channel;
 pub(crate) mod add_role_buttons;
 mod set_url_rule;
 mod is_alive;
+mod set_reaction_log;
+mod relay;
 
 use crate::error::Error;
 use crate::Data;
@@ -54,5 +56,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         add_role_buttons::rolebuttons(),
         set_url_rule::seturlrule(),
         is_alive::lifecheck(),
+        set_reaction_log::reactionslog(),
+        relay::relay(),
     ]
 }

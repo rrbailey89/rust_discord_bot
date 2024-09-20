@@ -12,13 +12,14 @@ use crate::config::Config;
 use crate::database::Database;
 use crate::error::Error;
 use poise::serenity_prelude as serenity;
-use poise::serenity_prelude::{ChannelId, CreateMessage};
+use poise::serenity_prelude::{ChannelId, CreateMessage, OnlineStatus, ActivityData};
 use serenity::GatewayIntents;
 use std::sync::Arc;
-use tokio::time::{interval, Duration};
+use tokio::time::{interval, Duration, sleep};
 use tracing::Level;
 use crate::types::ShardManagerContainer;
 use crate::types::DataContainer;
+use rand::Rng;
 
 #[derive(Clone)]
 pub struct Data {
@@ -41,6 +42,31 @@ async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Resul
     Ok(())
 }
 
+async fn update_presence(ctx: serenity::Context, data: Data) -> Result<(), Error> {
+
+    loop {
+        let activity = ActivityData::custom("Use /help to learn more");
+        ctx.set_presence(Some(activity), OnlineStatus::Online);
+
+        let sleep_duration = {
+            let mut rng = rand::thread_rng();
+            Duration::from_secs(rng.gen_range(600..=900))
+        };
+        sleep(sleep_duration).await;
+
+        let blame_count = data.database.get_blame_count().await?;
+        let activity = ActivityData::custom(format!("Serena's blame count: {}", blame_count));
+        ctx.set_presence(Some(activity), OnlineStatus::Online);
+
+        let sleep_duration = {
+            let mut rng = rand::thread_rng();
+            Duration::from_secs(rng.gen_range(600..=900))
+        };
+        sleep(sleep_duration).await;
+    }
+}
+
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt()
@@ -54,6 +80,14 @@ async fn main() -> Result<(), Error> {
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: commands::get_commands(),
+            prefix_options: poise::PrefixFrameworkOptions {
+                prefix: Some(config.command_prefix.clone()),
+                edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
+                    Duration::from_secs(3600)
+                ))),
+                case_insensitive_commands: true,
+                ..Default::default()
+            },
             event_handler: |ctx, event, framework, data| {
                 Box::pin(events::handle_event(ctx, event, framework, data))
             },
@@ -67,7 +101,7 @@ async fn main() -> Result<(), Error> {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
                 let data = Data {
-                    config: config_clone.clone().into(),
+                    config: Arc::new(config_clone),
                     database: database.clone(),
                 };
 
@@ -77,17 +111,26 @@ async fn main() -> Result<(), Error> {
                     data_map.insert::<DataContainer>(data.clone());
                 }
 
-                // Clone Data for the spawned task
-                let data_for_task = data.clone();
-                let ctx_clone = ctx.clone();
+                // Clone Context and Data for the spawned tasks
+                let ctx_for_reminder = ctx.clone();
+                let ctx_for_presence = ctx.clone();
+                let data_for_reminder = data.clone();
+                let data_for_presence = data.clone();
 
                 tokio::spawn(async move {
                     let mut interval = interval(Duration::from_secs(15));
                     loop {
                         interval.tick().await;
-                        if let Err(e) = check_and_send_reminders(&ctx_clone, &data_for_task).await {
+                        if let Err(e) = check_and_send_reminders(&ctx_for_reminder, &data_for_reminder).await {
                             eprintln!("Error sending reminders: {:?}", e);
                         }
+                    }
+                });
+
+                // Spawn the presence update task
+                tokio::spawn(async move {
+                    if let Err(e) = update_presence(ctx_for_presence, data_for_presence).await {
+                        eprintln!("Error updating presence: {:?}", e);
                     }
                 });
 

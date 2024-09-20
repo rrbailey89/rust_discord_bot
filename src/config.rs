@@ -11,6 +11,7 @@ pub struct Config {
     pub openweather_api_key: String,
     pub serena_user_id: String,
     pub api_ninjas_key: String,
+    pub command_prefix: String,
 }
 
 

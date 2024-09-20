@@ -364,6 +364,18 @@ impl Database {
 
         Ok((row.get(0), row.get(1)))
     }
+
+    pub async fn get_blame_count(&self) -> Result<i32, Error> {
+        let row = self.client
+            .query_one(
+                "SELECT count FROM blame_count WHERE id = 1",
+                &[],
+            )
+            .await?;
+
+        Ok(row.get(0))
+    }
+
     pub async fn add_rule(&self, guild_id: i64, rule: &str) -> Result<(), Error> {
         self.client
             .execute(
@@ -567,5 +579,47 @@ impl Database {
             }
             None => Ok(None),
         }
+    }
+    pub async fn set_star_channel(&self, guild_id: i64, channel_id: i64) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO star_channels (guild_id, channel_id) VALUES ($1, $2)
+                 ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id",
+                &[&guild_id, &channel_id],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_star_channel(&self, guild_id: i64) -> Result<Option<i64>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT channel_id FROM star_channels WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
+    }
+    pub async fn set_reaction_log_channel(&self, guild_id: i64, channel_id: i64, log_type: &str) -> Result<(), Error> {
+        self.client
+            .execute(
+                "INSERT INTO reaction_log_channels (guild_id, channel_id, log_type) VALUES ($1, $2, $3)
+                 ON CONFLICT (guild_id, log_type) DO UPDATE SET channel_id = EXCLUDED.channel_id",
+                &[&guild_id, &channel_id, &log_type],
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_reaction_log_channel(&self, guild_id: i64, log_type: &str) -> Result<Option<i64>, Error> {
+        let row = self.client
+            .query_opt(
+                "SELECT channel_id FROM reaction_log_channels WHERE guild_id = $1 AND log_type = $2",
+                &[&guild_id, &log_type],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
     }
 }
