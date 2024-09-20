@@ -5,6 +5,7 @@ use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter
 use poise::FrameworkContext;
 use crate::commands::add_role_buttons::handle_role_button;
 use regex::Regex;
+use crate::DataContainer;
 
 pub async fn handle_event(
     ctx: &Context,
@@ -182,49 +183,92 @@ async fn handle_message_for_leveling(ctx: &Context, msg: &Message, data: &Data) 
     Ok(())
 }
 async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), Error> {
-    if reaction.emoji == ReactionType::Unicode("⭐".to_string()) {
-        handle_star_reaction(ctx, reaction).await?;
+
+    // Get the user who added the reaction
+    let user = reaction.user(&ctx.http).await?;
+
+    // Check if the reaction is from a bot
+    if user.bot {
+        return Ok(()); // Ignore reactions from bots
+    }
+    
+    if let Some(guild_id) = reaction.guild_id {
+        let data = {
+            let data_read = ctx.data.read().await;
+            data_read.get::<DataContainer>().expect("Expected DataContainer in TypeMap").clone()
+        };
+
+        let guild_name = guild_id.name(&ctx.cache).unwrap_or_else(|| "Unknown Guild".to_string());
+
+        if reaction.emoji == ReactionType::Unicode("⭐".to_string()) {
+            if let Some(star_channel_id) = data.database.get_reaction_log_channel(guild_id.get() as i64, "star").await? {
+                let star_channel = ChannelId::new(star_channel_id as u64);
+
+                let channel = reaction.channel_id;
+                let message_id = reaction.message_id;
+
+                // Fetch the original message
+                let message = channel.message(&ctx.http, message_id).await?;
+
+                // Create the embed
+                let embed = CreateEmbed::default()
+                    .title("You're a Star! ⭐")
+                    .description(&message.content)
+                    .author(CreateEmbedAuthor::new(&message.author.name)
+                        .icon_url(message.author.face()))
+                    .footer(CreateEmbedFooter::new(format!("Original message ID: {}", message_id)))
+                    .timestamp(message.timestamp);
+
+                // If the original message has an image, add it to the embed
+                let embed = if let Some(attachment) = message.attachments.first() {
+                    if attachment.width.is_some() {  // This checks if it's an image
+                        embed.image(&attachment.url)
+                    } else {
+                        embed
+                    }
+                } else {
+                    embed
+                };
+
+                // Send the embed in the star channel
+                star_channel.send_message(&ctx.http, CreateMessage::default()
+                    .add_embed(embed)
+                ).await?;
+            }
+        } else {
+            // Log non-star reactions to the reaction log channel
+            if let Some(reaction_log_channel_id) = data.database.get_reaction_log_channel(guild_id.get() as i64, "reactions").await? {
+                let reaction_log_channel = ChannelId::new(reaction_log_channel_id as u64);
+
+                let emoji_name = match &reaction.emoji {
+                    ReactionType::Custom { animated: _, id, name } => name.as_ref().map_or_else(|| id.to_string(), |s| s.clone()),
+                    ReactionType::Unicode(s) => s.clone(),
+                    _ => "Unknown Emoji".to_string(),
+                };
+
+                let user = reaction.user(&ctx.http).await?;
+                let timestamp = chrono::Utc::now().timestamp();
+
+                let embed = CreateEmbed::default()
+                    .title("Reaction Added")
+                    .description(format!("{} reacted with {} at <t:{}:F>", user.name, emoji_name, timestamp))
+                    .footer(CreateEmbedFooter::new(format!("Guild: {}", guild_name)))
+                    .color(0x00FF00);
+
+                reaction_log_channel.send_message(&ctx.http, CreateMessage::default()
+                    .add_embed(embed)
+                ).await?;
+            }
+        }
     }
     Ok(())
 }
+
 fn calculate_required_exp(level: i32) -> i32 {
     (10.0 * (1.5f64.powi(level - 1))).round() as i32
 }
 
-async fn handle_star_reaction(ctx: &Context, reaction: &Reaction) -> Result<(), Error> {
-    let channel = reaction.channel_id;
-    let message_id = reaction.message_id;
 
-    // Fetch the original message
-    let message = channel.message(&ctx.http, message_id).await?;
-
-    // Create the embed
-    let embed = CreateEmbed::default()
-        .title("You're a Star! ⭐")
-        .description(&message.content)
-        .author(CreateEmbedAuthor::new(&message.author.name)
-            .icon_url(message.author.face()))
-        .footer(CreateEmbedFooter::new(format!("Original message ID: {}", message_id)))
-        .timestamp(message.timestamp);
-
-    // If the original message has an image, add it to the embed
-    let embed = if let Some(attachment) = message.attachments.first() {
-        if attachment.width.is_some() {  // This checks if it's an image
-            embed.image(&attachment.url)
-        } else {
-            embed
-        }
-    } else {
-        embed
-    };
-
-    // Send the embed in the same channel
-    channel.send_message(&ctx.http, CreateMessage::default()
-        .add_embed(embed)
-    ).await?;
-
-    Ok(())
-}
 async fn process_url_rule(ctx: &Context, data: &Data, message: &Message) -> Result<(), Error> {
     if let Some(guild_id) = message.guild_id {
         if let Some(rule) = data.database.get_url_rule(guild_id.get() as i64, message.channel_id.get() as i64).await? {
