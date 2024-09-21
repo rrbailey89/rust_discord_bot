@@ -6,6 +6,7 @@ use poise::FrameworkContext;
 use crate::commands::add_role_buttons::handle_role_button;
 use regex::Regex;
 use crate::DataContainer;
+use rand::Rng;
 
 pub async fn handle_event(
     ctx: &Context,
@@ -154,7 +155,7 @@ async fn handle_message_delete_bulk(
 }
 
 async fn handle_message_for_leveling(ctx: &Context, msg: &Message, data: &Data) -> Result<(), Error> {
-    if msg.author.bot {
+    if msg.author.bot || msg.guild_id.is_none() || msg.content.is_empty() {
         return Ok(());
     }
 
@@ -191,7 +192,7 @@ async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), E
     if user.bot {
         return Ok(()); // Ignore reactions from bots
     }
-    
+
     if let Some(guild_id) = reaction.guild_id {
         let data = {
             let data_read = ctx.data.read().await;

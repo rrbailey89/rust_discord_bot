@@ -23,21 +23,38 @@ pub async fn relay(
     let serenity_ctx = ctx.serenity_context();
 
     // Check if the bot is in the specified guild and if the channel exists
-    if !is_bot_in_guild_and_channel_exists(serenity_ctx, guild_id, channel_id)? {
-        return Err(Error::Unknown("Bot is not in the specified guild or the channel doesn't exist".to_string()));
+    match is_bot_in_guild_and_channel_exists(serenity_ctx, guild_id, channel_id) {
+        Ok(_) => {
+            // Send the message to the specified channel
+            channel_id.say(&ctx.http(), &message).await?;
+
+            // Confirm to the user that the message was sent
+            ctx.say("Message relayed successfully!").await?;
+            Ok(())
+        },
+        Err(Error::NotInGuild) => {
+            ctx.say("Bot is not a member of the specified guild.").await?;
+            Ok(()) // Return Ok to prevent poise from handling the error
+        },
+        Err(Error::ChannelNotFound) => {
+            ctx.say("The specified channel was not found in the guild.").await?;
+            Ok(()) // Return Ok to prevent poise from handling the error
+        },
+        Err(e) => {
+            ctx.say(format!("An unexpected error occurred: {}", e)).await?;
+            Ok(()) // Return Ok to prevent poise from handling the error
+        },
     }
-
-    // Send the message to the specified channel
-    channel_id.say(&ctx.http(), &message).await?;
-
-    // Confirm to the user that the message was sent
-    ctx.say("Message relayed successfully!").await?;
-
-    Ok(())
 }
 
 fn is_bot_in_guild_and_channel_exists(ctx: &SerenityContext, guild_id: GuildId, channel_id: ChannelId) -> Result<bool, Error> {
-    ctx.cache.guild(guild_id)
-        .map(|g| g.channels.contains_key(&channel_id))
-        .ok_or_else(|| Error::Unknown("Failed to access guild or channel information".to_string()))
+    if let Some(guild) = ctx.cache.guild(guild_id) {
+        if guild.channels.contains_key(&channel_id) {
+            Ok(true)
+        } else {
+            Err(Error::ChannelNotFound)
+        }
+    } else {
+        Err(Error::NotInGuild)
+    }
 }
