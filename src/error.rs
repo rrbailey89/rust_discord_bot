@@ -27,6 +27,12 @@ pub enum Error {
     #[error("Request error: {0}")]
     Request(#[from] reqwest::Error),
 
+    #[error("Bot is not a member of the specified guild")]
+    NotInGuild,
+
+    #[error("Channel not found in the specified guild")]
+    ChannelNotFound,
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
