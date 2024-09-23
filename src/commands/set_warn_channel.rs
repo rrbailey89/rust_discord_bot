@@ -5,7 +5,7 @@ use poise::serenity_prelude::Channel;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Set the channel for logging warnings
-#[poise::command(slash_command)]
+#[poise::command(slash_command, default_member_permissions = "MANAGE_CHANNELS", guild_only)]
 pub async fn setwarnchannel(
     ctx: Context<'_>,
     #[description = "Channel to log warnings"] channel: Channel,

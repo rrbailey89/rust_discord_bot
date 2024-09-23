@@ -4,8 +4,9 @@ use psutil::process::Process;
 use crate::types::ShardManagerContainer;
 
 /// Ping command to measure bot latency and other metrics.
-#[poise::command(slash_command)]
-pub async fn ping(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+#[poise::command(slash_command, guild_only)]
+pub async fn ping(ctx: poise::Context<'_, Data, Error>
+) -> Result<(), Error> {
     let cache = ctx.serenity_context().cache.clone();
     let guild_count = cache.guilds().len();
 

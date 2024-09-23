@@ -6,7 +6,7 @@ use crate::Data;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Toggle emoji reactions for this server
-#[poise::command(slash_command, guild_only, required_permissions = "MANAGE_GUILD")]
+#[poise::command(slash_command, guild_only, default_member_permissions = "MANAGE_GUILD")]
 pub async fn toggleemojireactions(
     ctx: Context<'_>,
     #[description = "Enable or disable emoji reactions"] enable: Option<bool>,

@@ -2,7 +2,7 @@ use crate::{error::Error, Data, types::UrlRule};
 use poise::serenity_prelude::ChannelId;
 use regex::Regex;
 
-#[poise::command(slash_command, guild_only)]
+#[poise::command(slash_command, guild_only, default_member_permissions = "MANAGE_CHANNELS")]
 pub async fn seturlrule(
     ctx: poise::Context<'_, Data, Error>,
     #[description = "Channel to apply the rule"] channel: ChannelId,

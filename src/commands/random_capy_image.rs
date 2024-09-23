@@ -26,7 +26,8 @@ pub async fn randomcapyimage(ctx: Context<'_>) -> Result<(), Error> {
 
     let embed = CreateEmbed::new()
         .title(alt_text)
-        .image(image_url);
+        .image(image_url)
+        .color(0x8B4513);
 
     ctx.send(CreateReply::default().embed(embed)).await?;
 

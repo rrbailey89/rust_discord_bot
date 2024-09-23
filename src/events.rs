@@ -6,7 +6,6 @@ use poise::FrameworkContext;
 use crate::commands::add_role_buttons::handle_role_button;
 use regex::Regex;
 use crate::DataContainer;
-use rand::Rng;
 
 pub async fn handle_event(
     ctx: &Context,

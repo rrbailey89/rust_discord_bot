@@ -17,7 +17,7 @@ struct UserInfo {
 }
 
 /// Get information about a user
-#[poise::command(context_menu_command = "User Information")]
+#[poise::command(guild_only, context_menu_command = "User Information")]
 pub async fn userinfo(
     ctx: Context<'_>,
     user: User,

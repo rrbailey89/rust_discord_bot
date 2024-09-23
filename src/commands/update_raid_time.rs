@@ -139,7 +139,7 @@ impl Raid {
 }
 
 /// Update the raid time in a channel's topic
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn updateraidtime(
     ctx: Context<'_>,
     #[description = "Select the month"] month: Month,

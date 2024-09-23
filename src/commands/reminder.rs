@@ -52,7 +52,7 @@ impl FromStr for Frequency {
     }
 }
 
-#[poise::command(slash_command, subcommands("create", "list", "delete"))]
+#[poise::command(slash_command, guild_only, subcommands("create", "list", "delete"))]
 pub async fn reminder(_ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
