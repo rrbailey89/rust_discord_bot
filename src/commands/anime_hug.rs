@@ -6,7 +6,7 @@ use poise::serenity_prelude::{CreateEmbed, Mentionable, User};
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Hug another user with an anime gif
-#[poise::command(slash_command, category = "Fun")]
+#[poise::command(slash_command, guild_only, category = "Fun")]
 pub async fn animehug(
     ctx: Context<'_>,
     #[description = "User to hug"] user: User,

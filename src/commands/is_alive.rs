@@ -25,7 +25,7 @@ fn format_occupation(occupation: &[String]) -> String {
 }
 
 /// Check if a selected person is alive
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn lifecheck(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let people = vec![
         "Pierce Brosnan",

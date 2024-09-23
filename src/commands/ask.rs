@@ -9,9 +9,8 @@ use async_openai::{
     Client,
 };
 use futures::StreamExt;
-use poise::serenity_prelude::CreateEmbed;
 
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn ask(
     ctx: poise::Context<'_, Data, Error>,
     #[description = "Your question"] question: String,
@@ -119,10 +118,6 @@ pub async fn ask(
         }
     }
 
-    let embed = CreateEmbed::default()
-        .title("Assistant's Response")
-        .description(response)
-        .color(0x00ff00);
-    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+    ctx.send(poise::CreateReply::default().content(response)).await?;
     Ok(())
 }

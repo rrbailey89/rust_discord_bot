@@ -8,7 +8,8 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 #[poise::command(
     slash_command,
     subcommands("setstarschannel", "setreactionschannel"),
-    required_permissions = "MANAGE_CHANNELS"
+    default_member_permissions = "MANAGE_CHANNELS",
+    guild_only
 )]
 pub async fn reactionslog(_: Context<'_>) -> Result<(), Error> {
     Ok(())

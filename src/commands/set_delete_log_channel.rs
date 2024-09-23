@@ -4,7 +4,7 @@ use poise::serenity_prelude::Channel;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn setdeletemessagechannel(
     ctx: Context<'_>,
     #[description = "Channel to log deleted messages"] channel: Channel,

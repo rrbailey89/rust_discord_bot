@@ -26,7 +26,6 @@ mod relay;
 
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::Permissions;
 
 pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
     vec![
@@ -39,11 +38,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         anime_hug::animehug(),
         update_raid_time::updateraidtime(),
         ask::ask(),
-        {
-            let mut cmd = purge::purge();
-            cmd.default_member_permissions = Permissions::MANAGE_MESSAGES;
-            cmd
-        },
+        purge::purge(),
         set_delete_log_channel::setdeletemessagechannel(),
         ping::ping(),
         toggle_emoji_reactions::toggleemojireactions(),

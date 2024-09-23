@@ -46,7 +46,7 @@ struct ButtonInfo {
 }
 
 /// Add or remove role assignment buttons to a message
-#[poise::command(slash_command, subcommands("add", "remove"))]
+#[poise::command(slash_command, guild_only, subcommands("add", "remove"))]
 pub async fn rolebuttons(_ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }

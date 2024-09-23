@@ -31,7 +31,7 @@ impl BlameReason {
 }
 
 /// Blame someone (or Serena) for something
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn blame(
     ctx: Context<'_>,
     #[description = "User to blame (defaults to Serena)"] user: Option<UserId>,
@@ -60,6 +60,10 @@ pub async fn blame(
     };
 
     ctx.say(response).await?;
+
+    // Update the bot's status with the new total blame count
+    let activity = poise::serenity_prelude::ActivityData::custom(format!("Serena's blame count: {}", serena_blame_count));
+    ctx.serenity_context().set_activity(Some(activity));
 
     Ok(())
 }

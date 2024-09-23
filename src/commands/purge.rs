@@ -5,7 +5,7 @@ use poise::CreateReply;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only, default_member_permissions = "MANAGE_MESSAGES")]
 pub async fn purge(
     ctx: Context<'_>,
     #[description = "Number of messages to delete"]

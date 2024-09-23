@@ -3,7 +3,6 @@ use crate::Data;
 use async_openai::{types::{CreateImageRequestArgs, Image, ImageModel, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle}, Client, };
 use poise::serenity_prelude::CreateAttachment;
 
-
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 #[derive(poise::ChoiceParameter)]
@@ -69,7 +68,7 @@ pub async fn createimage(
     };
 
     let request = CreateImageRequestArgs::default()
-        .prompt(prompt)
+        .prompt(prompt.clone())
         .model(ImageModel::DallE3)
         .n(1)
         .size(size)
@@ -85,7 +84,7 @@ pub async fn createimage(
             let image_data = reqwest::get(url).await?.bytes().await?;
             let attachment = CreateAttachment::bytes(image_data, "generated_image.png");
             let reply = poise::CreateReply::default()
-                .content("Here's your generated image:")
+                .content(format!("Prompt: {}", prompt))
                 .attachment(attachment);
             ctx.send(reply).await?;
         } else {
