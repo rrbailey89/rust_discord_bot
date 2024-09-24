@@ -14,6 +14,8 @@ struct UserInfo {
     joined_server: DateTime<Utc>,
     roles: Vec<RoleId>,
     hug_count: i32,
+    level: i32,
+    experience: i32,
 }
 
 /// Get information about a user
@@ -38,6 +40,9 @@ pub async fn userinfo(
 
 async fn fetch_user_info(ctx: &Context<'_>, user: &User, member: &Member) -> Result<UserInfo, Error> {
     let hug_count = ctx.data().database.get_hug_count(user.id.get() as i64).await?;
+    let guild_id = ctx.guild_id()
+        .ok_or_else(|| Error::Unknown("Failed to get guild ID".to_string()))?;
+    let (level, experience) = ctx.data().database.get_user_level(guild_id.get() as i64, user.id.get() as i64).await?;
 
     Ok(UserInfo {
         discord_name: user.name.clone(),
@@ -48,6 +53,8 @@ async fn fetch_user_info(ctx: &Context<'_>, user: &User, member: &Member) -> Res
             .unwrap_or_else(Utc::now),
         roles: member.roles.clone(),
         hug_count,
+        level,
+        experience,
     })
 }
 
@@ -65,5 +72,7 @@ fn create_user_info_embed(user_info: &UserInfo, user: &User) -> CreateEmbed {
         }, true)
         .field("Total Hugs Received", user_info.hug_count.to_string(), true)
         .image(user.face())
+        .field("Level", user_info.level.to_string(), true)
+        .field("Experience", user_info.experience.to_string(), true)
         .color(0x00ff00)
 }
