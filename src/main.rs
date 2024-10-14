@@ -20,11 +20,13 @@ use tracing::Level;
 use crate::types::ShardManagerContainer;
 use crate::types::DataContainer;
 use rand::Rng;
+use std::time::Instant;
 
 #[derive(Clone)]
 pub struct Data {
     pub config: Arc<Config>,
     pub database: Database,
+    pub start_time: Arc<Instant>,
 }
 
 async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Result<(), Error> {
@@ -75,6 +77,7 @@ async fn main() -> Result<(), Error> {
 
     let config = Config::load().await?;
     let database = Database::connect(&config.database_url).await?;
+    let start_time = Arc::new(Instant::now());
 
     let config_clone = config.clone();
     let framework = poise::Framework::builder()
@@ -103,6 +106,7 @@ async fn main() -> Result<(), Error> {
                 let data = Data {
                     config: Arc::new(config_clone),
                     database: database.clone(),
+                    start_time: start_time.clone(),
                 };
 
                 // Insert Data into TypeMap

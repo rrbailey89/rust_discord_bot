@@ -23,6 +23,7 @@ mod set_url_rule;
 mod is_alive;
 mod set_reaction_log;
 mod relay;
+mod flux_image;
 
 use crate::error::Error;
 use crate::Data;
@@ -53,5 +54,6 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         is_alive::lifecheck(),
         set_reaction_log::reactionslog(),
         relay::relay(),
+        flux_image::fluximage(),
     ]
 }
