@@ -182,6 +182,11 @@ async fn handle_message_for_leveling(ctx: &Context, msg: &Message, data: &Data) 
 
     Ok(())
 }
+
+fn calculate_required_exp(level: i32) -> i32 {
+    (10.0 * (1.5f64.powi(level - 1))).round() as i32
+}
+
 async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), Error> {
 
     // Get the user who added the reaction
@@ -263,11 +268,6 @@ async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), E
     }
     Ok(())
 }
-
-fn calculate_required_exp(level: i32) -> i32 {
-    (10.0 * (1.5f64.powi(level - 1))).round() as i32
-}
-
 
 async fn process_url_rule(ctx: &Context, data: &Data, message: &Message) -> Result<(), Error> {
     if let Some(guild_id) = message.guild_id {

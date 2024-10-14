@@ -33,6 +33,9 @@ pub enum Error {
     #[error("Channel not found in the specified guild")]
     ChannelNotFound,
 
+    #[error("Invalid header value: {0}")]
+    InvalidHeaderValue(#[from] reqwest::header::InvalidHeaderValue),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }

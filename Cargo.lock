@@ -12,6 +12,7 @@ dependencies = [
  "chrono-tz",
  "futures",
  "futures-util",
+ "lazy_static",
  "num-traits",
  "poise",
  "postgres-types",
