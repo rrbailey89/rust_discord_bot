@@ -25,6 +25,7 @@ mod set_reaction_log;
 mod relay;
 mod flux_image;
 mod iscaliforniaonfire;
+mod whereiscaliforniaonfire;
 
 use crate::error::Error;
 use crate::Data;
@@ -57,5 +58,6 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         relay::relay(),
         flux_image::fluximage(),
         iscaliforniaonfire::iscaliforniaonfire(),
+        whereiscaliforniaonfire::whereiscaliforniaonfire(),
     ]
 }
