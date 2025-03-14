@@ -691,21 +691,37 @@ impl Database {
         )).collect())
     }
 
-    // Delete a specific unavailability record
+    // Delete a specific unavailability record and return message_id and date if found
     pub async fn delete_user_unavailability(
         &self,
         guild_id: i64,
         user_id: i64,
         unavailability_id: i32,
-    ) -> Result<bool, Error> {
-        let rows_affected = self.client
-            .execute(
+    ) -> Result<Option<(i64, NaiveDate)>, Error> {
+        let row = self.client
+            .query_opt(
                 "DELETE FROM user_unavailability 
-                 WHERE id = $1 AND guild_id = $2 AND user_id = $3",
+                 WHERE id = $1 AND guild_id = $2 AND user_id = $3
+                 RETURNING message_id, unavailable_date",
                 &[&unavailability_id, &guild_id, &user_id],
             )
             .await?;
 
-        Ok(rows_affected > 0)
+        Ok(row.map(|r| (r.get::<_, Option<i64>>(0).unwrap_or(0), r.get(1))))
+    }
+    
+    // Update the message ID for an unavailability record
+    pub async fn update_unavailability_message_id(
+        &self,
+        unavailability_id: i32,
+        message_id: i64,
+    ) -> Result<(), Error> {
+        self.client
+            .execute(
+                "UPDATE user_unavailability SET message_id = $2 WHERE id = $1",
+                &[&unavailability_id, &message_id],
+            )
+            .await?;
+        Ok(())
     }
 }

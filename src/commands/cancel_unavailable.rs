@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::Data;
 use chrono::Utc;
-use poise::serenity_prelude::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage};
+use poise::serenity_prelude::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, MessageId};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
@@ -17,41 +17,58 @@ pub async fn cancelunavailable(
     let guild_id = ctx.guild_id()
         .ok_or_else(|| Error::Unknown("This command can only be used in a server".to_string()))?;
     
-    // Attempt to delete the unavailability record
-    let success = ctx.data().database.delete_user_unavailability(
+    // Attempt to delete the unavailability record and get the message ID and date
+    let result = ctx.data().database.delete_user_unavailability(
         guild_id.get() as i64,
         ctx.author().id.get() as i64,
         unavailability_id,
     ).await?;
     
-    if success {
+    if let Some((message_id, unavailable_date)) = result {
         // Get the unavailability channel
         let unavailability_channel_id = match ctx.data().database.fetch_unavailability_channel(guild_id.get() as i64).await? {
             Some(channel_id) => channel_id,
             None => return Err(Error::Unknown("No unavailability channel has been set for this server.".to_string())),
         };
         
+        let unavailability_channel = poise::serenity_prelude::ChannelId::new(unavailability_channel_id as u64);
+        
+        // Delete the original message if message_id exists
+        if message_id > 0 {
+            // Try to delete the original message, but don't fail if it can't be found
+            let _ = unavailability_channel.delete_message(
+                &ctx.serenity_context().http, 
+                MessageId::new(message_id as u64)
+            ).await;
+        }
+        
         // Get the user's nickname or username
         let member = ctx.author_member().await.ok_or_else(|| Error::Unknown("Failed to get member data".to_string()))?;
         let display_name = member.nick.as_deref().unwrap_or(&ctx.author().name);
         
-        // Create cancellation notice embed
-        let embed = CreateEmbed::default()
-            .title("Unavailability Cancelled")
-            .author(CreateEmbedAuthor::new(display_name).icon_url(ctx.author().face()))
-            .description(format!("<@{}> has cancelled their unavailability.", ctx.author().id))
-            .color(0x00FF00) // Green color
-            .footer(CreateEmbedFooter::new(format!("Cancelled on {}", Utc::now().format("%Y-%m-%d"))));
+        // Format the date for display
+        let date_str = unavailable_date.format("%Y-%m-%d").to_string();
         
-        // Send the embed to the unavailability channel
-        let unavailability_channel = poise::serenity_prelude::ChannelId::new(unavailability_channel_id as u64);
+        // Create new availability message
+        let embed = CreateEmbed::default()
+            .title("User Now Available")
+            .author(CreateEmbedAuthor::new(display_name).icon_url(ctx.author().face()))
+            .description(format!(
+                "<@{}> is now available on {}.\nThey were previously marked as unavailable.", 
+                ctx.author().id, 
+                date_str
+            ))
+            .color(0x00FF00) // Green color
+            .footer(CreateEmbedFooter::new(format!("Updated on {}", Utc::now().format("%Y-%m-%d"))));
+        
+        // Send the new message
         unavailability_channel.send_message(&ctx.serenity_context().http, 
             CreateMessage::default().add_embed(embed)
         ).await?;
         
         // Send ephemeral confirmation to the user
         ctx.send(poise::CreateReply::default()
-            .content("✅ Your unavailability has been cancelled.")
+            .content("✅ Your unavailability has been cancelled and the original message has been removed.")
             .ephemeral(true)
         ).await?;
         
