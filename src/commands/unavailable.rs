@@ -1,42 +1,51 @@
 use crate::error::Error;
+use crate::utils::parse_datetime;
 use crate::Data;
-use chrono::{NaiveDate, Utc};
+use chrono::Utc;
 use poise::serenity_prelude::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
+
+#[derive(poise::ChoiceParameter, Debug)]
+pub enum Month {
+    January, February, March, April, May, June, July,
+    August, September, October, November, December
+}
+
+#[derive(poise::ChoiceParameter)]
+pub enum Year {
+    #[name = "2024"] Y2024 = 2024,
+    #[name = "2025"] Y2025 = 2025,
+    #[name = "2026"] Y2026 = 2026,
+    #[name = "2027"] Y2027 = 2027,
+    #[name = "2028"] Y2028 = 2028,
+}
+
+impl std::fmt::Display for Month {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 /// Mark yourself as unavailable on a specific date
 #[poise::command(slash_command, guild_only)]
 pub async fn unavailable(
     ctx: Context<'_>,
-    #[description = "Month (e.g., January, February)"] month: String,
-    #[description = "Day (1-31)"] day: i64,
-    #[description = "Year (e.g., 2025)"] year: i64,
+    #[description = "Select the month"] month: Month,
+    #[description = "Enter the day (1-31)"] day: i64,
+    #[description = "Select the year"] year: Year,
     #[description = "Reason for unavailability (optional)"] reason: Option<String>,
 ) -> Result<(), Error> {
+    // Defer the response to avoid timeout
+    ctx.defer_ephemeral().await?;
     let guild_id = ctx.guild_id()
         .ok_or_else(|| Error::Unknown("This command can only be used in a server".to_string()))?;
     
-    // Validate the date
-    let month_num = match month.to_lowercase().as_str() {
-        "january" | "jan" => 1,
-        "february" | "feb" => 2,
-        "march" | "mar" => 3,
-        "april" | "apr" => 4,
-        "may" => 5,
-        "june" | "jun" => 6,
-        "july" | "jul" => 7,
-        "august" | "aug" => 8,
-        "september" | "sep" => 9,
-        "october" | "oct" => 10,
-        "november" | "nov" => 11,
-        "december" | "dec" => 12,
-        _ => return Err(Error::Unknown("Invalid month. Please use full month name or 3-letter abbreviation.".to_string())),
-    };
-    
-    // Validate the date is valid
-    let unavailable_date = NaiveDate::from_ymd_opt(year as i32, month_num, day as u32)
-        .ok_or_else(|| Error::Unknown("Invalid date. Please check that the day exists for the given month and year.".to_string()))?;
+    // We'll use the parse_datetime function to create a timestamp
+    // Since we only care about the date (not time), we'll use a fixed time and timezone
+    let datetime = parse_datetime(&month.to_string(), day, year as i64, "12:00 PM", "America/Los_Angeles")?;
+    let unix_timestamp = datetime.timestamp();
+    let unavailable_date = datetime.date_naive();
     
     // Get the unavailability channel
     let unavailability_channel_id = match ctx.data().database.fetch_unavailability_channel(guild_id.get() as i64).await? {
@@ -55,11 +64,6 @@ pub async fn unavailable(
     // Get the user's nickname or username
     let member = ctx.author_member().await.ok_or_else(|| Error::Unknown("Failed to get member data".to_string()))?;
     let display_name = member.nick.as_deref().unwrap_or(&ctx.author().name);
-    
-    // Create the embed
-    let unix_timestamp = unavailable_date.and_hms_opt(0, 0, 0)
-        .ok_or_else(|| Error::Unknown("Failed to create timestamp".to_string()))?
-        .timestamp();
     
     let mut embed = CreateEmbed::default()
         .title("Unavailability Notice")
