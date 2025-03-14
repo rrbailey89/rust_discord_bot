@@ -53,8 +53,7 @@ pub async fn unavailable(
     ).await?;
     
     // Get the user's nickname or username
-    let guild = ctx.guild().ok_or_else(|| Error::Unknown("Failed to get guild".to_string()))?;
-    let member = guild.member(&ctx.serenity_context().http, ctx.author().id).await?;
+    let member = ctx.author_member().await.ok_or_else(|| Error::Unknown("Failed to get member data".to_string()))?;
     let display_name = member.nick.as_deref().unwrap_or(&ctx.author().name);
     
     // Create the embed
