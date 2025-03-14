@@ -65,7 +65,7 @@ pub async fn unavailable(
         .color(0xFF9900) // Orange color
         .footer(CreateEmbedFooter::new(format!("Posted on {}", Utc::now().format("%Y-%m-%d"))));
     
-    if let Some(reason_text) = reason {
+    if let Some(ref reason_text) = reason {
         embed = embed.field("Reason", reason_text, false);
     }
     
