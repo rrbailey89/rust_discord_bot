@@ -34,7 +34,7 @@ pub async fn unavailable(
     #[description = "Enter the day (1-31)"] day: i64,
     #[description = "Select the year"] year: Year,
     #[description = "Reason for unavailability (optional)"] reason: Option<String>,
-    #[description = "Mention Role (optional)"] role_to_mention: Option<Role>,
+    #[description = "Mention Role (optional)"] mention_role: Option<Role>,
 ) -> Result<(), Error> {
     // Defer the response to avoid timeout
     ctx.defer_ephemeral().await?;
@@ -52,14 +52,6 @@ pub async fn unavailable(
         Some(channel_id) => channel_id,
         None => return Err(Error::Unknown("No unavailability channel has been set for this server. Please ask an admin to set one using /setunavailabilitychannel.".to_string())),
     };
-    
-    // Store the unavailability record
-    ctx.data().database.store_user_unavailability(
-        guild_id.get() as i64,
-        ctx.author().id.get() as i64,
-        unavailable_date,
-        reason.clone(),
-    ).await?;
     
     // Get the user's nickname or username
     let member = ctx.author_member().await.ok_or_else(|| Error::Unknown("Failed to get member data".to_string()))?;
@@ -84,11 +76,26 @@ pub async fn unavailable(
     let mut message = CreateMessage::default().add_embed(embed);
     
     // Add role mention to the message content if provided
-    if let Some(role) = role_to_mention {
+    if let Some(role) = mention_role {
         message = message.content(format!("<@&{}>", role.id));
     }
     
-    unavailability_channel.send_message(&ctx.serenity_context().http, message).await?;
+    // Store the unavailability record
+    let unavailability_id = ctx.data().database.store_user_unavailability(
+        guild_id.get() as i64,
+        ctx.author().id.get() as i64,
+        unavailable_date,
+        reason.clone(),
+    ).await?;
+    
+    // Send the message and store its ID
+    let message_response = unavailability_channel.send_message(&ctx.serenity_context().http, message).await?;
+    
+    // Update the record with the message ID
+    ctx.data().database.update_unavailability_message_id(
+        unavailability_id, 
+        message_response.id.get() as i64
+    ).await?;
     
     // Send ephemeral confirmation to the user
     ctx.send(poise::CreateReply::default()
