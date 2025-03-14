@@ -34,7 +34,7 @@ pub async fn unavailable(
     #[description = "Enter the day (1-31)"] day: i64,
     #[description = "Select the year"] year: Year,
     #[description = "Reason for unavailability (optional)"] reason: Option<String>,
-    #[description = "Role to mention (optional)"] role_to_mention: Option<Role>,
+    #[description = "Mention Role (optional)"] role_to_mention: Option<Role>,
 ) -> Result<(), Error> {
     // Defer the response to avoid timeout
     ctx.defer_ephemeral().await?;
