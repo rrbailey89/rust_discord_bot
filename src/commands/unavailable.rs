@@ -14,7 +14,6 @@ pub enum Month {
 
 #[derive(poise::ChoiceParameter)]
 pub enum Year {
-    #[name = "2024"] Y2024 = 2024,
     #[name = "2025"] Y2025 = 2025,
     #[name = "2026"] Y2026 = 2026,
     #[name = "2027"] Y2027 = 2027,
