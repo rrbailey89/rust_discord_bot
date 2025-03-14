@@ -1,6 +1,6 @@
 use crate::commands::reminder::{Frequency, Reminder};
 use crate::error::Error;
-use chrono::{Datelike, Utc, Weekday};
+use chrono::{Datelike, Utc, Weekday, NaiveDate};
 use chrono_tz::America::Los_Angeles;
 use poise::serenity_prelude::{ChannelType, Guild, UserId};
 use std::str::FromStr;
@@ -8,7 +8,6 @@ use std::sync::Arc;
 use tokio_postgres::{Client, NoTls};
 use crate::types::UrlRule;
 use serde_json::Value;
-use chrono::NaiveDate;
 
 #[derive(Clone)]
 pub struct Database {
