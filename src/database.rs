@@ -666,4 +666,46 @@ impl Database {
 
         Ok(row.get(0))
     }
+
+    // Get unavailability records for a specific user in a guild
+    pub async fn get_user_unavailability(
+        &self,
+        guild_id: i64,
+        user_id: i64,
+    ) -> Result<Vec<(i32, NaiveDate, Option<String>)>, Error> {
+        let rows = self.client
+            .query(
+                "SELECT id, unavailable_date, reason 
+                 FROM user_unavailability 
+                 WHERE guild_id = $1 AND user_id = $2
+                 AND unavailable_date >= CURRENT_DATE
+                 ORDER BY unavailable_date ASC",
+                &[&guild_id, &user_id],
+            )
+            .await?;
+
+        Ok(rows.iter().map(|row| (
+            row.get(0), // id
+            row.get(1), // unavailable_date
+            row.get(2), // reason
+        )).collect())
+    }
+
+    // Delete a specific unavailability record
+    pub async fn delete_user_unavailability(
+        &self,
+        guild_id: i64,
+        user_id: i64,
+        unavailability_id: i32,
+    ) -> Result<bool, Error> {
+        let rows_affected = self.client
+            .execute(
+                "DELETE FROM user_unavailability 
+                 WHERE id = $1 AND guild_id = $2 AND user_id = $3",
+                &[&unavailability_id, &guild_id, &user_id],
+            )
+            .await?;
+
+        Ok(rows_affected > 0)
+    }
 }

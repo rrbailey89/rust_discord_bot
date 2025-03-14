@@ -28,6 +28,8 @@ mod iscaliforniaonfire;
 mod whereiscaliforniaonfire;
 mod set_unavailability_channel;
 mod unavailable;
+mod list_unavailable;
+mod cancel_unavailable;
 
 use crate::error::Error;
 use crate::Data;
@@ -63,5 +65,7 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         whereiscaliforniaonfire::whereiscaliforniaonfire(),
         set_unavailability_channel::setunavailabilitychannel(),
         unavailable::unavailable(),
+        list_unavailable::listunavailable(),
+        cancel_unavailable::cancelunavailable(),
     ]
 }
