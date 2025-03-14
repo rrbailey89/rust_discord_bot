@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::utils::parse_datetime;
 use crate::Data;
 use chrono::Utc;
-use poise::serenity_prelude::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage};
+use poise::serenity_prelude::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, Role};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
@@ -34,6 +34,7 @@ pub async fn unavailable(
     #[description = "Enter the day (1-31)"] day: i64,
     #[description = "Select the year"] year: Year,
     #[description = "Reason for unavailability (optional)"] reason: Option<String>,
+    #[description = "Role to mention (optional)"] role_to_mention: Option<Role>,
 ) -> Result<(), Error> {
     // Defer the response to avoid timeout
     ctx.defer_ephemeral().await?;
@@ -78,9 +79,16 @@ pub async fn unavailable(
     
     // Send the embed to the unavailability channel
     let unavailability_channel = poise::serenity_prelude::ChannelId::new(unavailability_channel_id as u64);
-    unavailability_channel.send_message(&ctx.serenity_context().http, 
-        CreateMessage::default().add_embed(embed)
-    ).await?;
+    
+    // Create message with embed and optional role mention
+    let mut message = CreateMessage::default().add_embed(embed);
+    
+    // Add role mention to the message content if provided
+    if let Some(role) = role_to_mention {
+        message = message.content(format!("<@&{}>", role.id));
+    }
+    
+    unavailability_channel.send_message(&ctx.serenity_context().http, message).await?;
     
     // Send ephemeral confirmation to the user
     ctx.send(poise::CreateReply::default()
