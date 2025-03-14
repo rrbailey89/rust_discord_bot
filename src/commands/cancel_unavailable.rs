@@ -46,17 +46,19 @@ pub async fn cancelunavailable(
         let member = ctx.author_member().await.ok_or_else(|| Error::Unknown("Failed to get member data".to_string()))?;
         let display_name = member.nick.as_deref().unwrap_or(&ctx.author().name);
         
-        // Format the date for display
-        let date_str = unavailable_date.format("%Y-%m-%d").to_string();
+        // Convert to Unix timestamp for Discord formatting
+        let unix_timestamp = unavailable_date.and_hms_opt(12, 0, 0)
+            .ok_or_else(|| Error::Unknown("Failed to create timestamp".to_string()))?
+            .timestamp();
         
         // Create new availability message
         let embed = CreateEmbed::default()
             .title("User Now Available")
             .author(CreateEmbedAuthor::new(display_name).icon_url(ctx.author().face()))
             .description(format!(
-                "<@{}> is now available on {}.\nThey were previously marked as unavailable.", 
+                "<@{}> is now available on <t:{}:D>.\nThey were previously marked as unavailable.", 
                 ctx.author().id, 
-                date_str
+                unix_timestamp
             ))
             .color(0x00FF00) // Green color
             .footer(CreateEmbedFooter::new(format!("Updated on {}", Utc::now().format("%Y-%m-%d"))));
