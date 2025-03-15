@@ -1,0 +1,40 @@
+# Version control
+.git/
+.gitignore
+
+# Docker-related files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Logs
+logs/
+*.log
+
+# Backups
+db_backups/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Scripts that should not be included in the container
+deploy.sh
+backup.sh
+monitor.sh
+restart.sh
+
+# Documentation
+DOCKER.md
+README.md
