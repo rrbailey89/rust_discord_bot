@@ -22,9 +22,16 @@ echo "Using ${DOCKER_COMPOSE} command"
 echo -e "\n## Container Status ##"
 docker ps -a | grep -E 'discord_bot|postgres'
 
+# Get container ID for discord_bot container
+BOT_CONTAINER_ID=$(docker ps -q --filter "name=discord_bot")
+
 # Check container logs (last 20 lines)
 echo -e "\n## Bot Recent Logs ##"
-docker logs --tail=20 discord_bot 2>&1 | grep -v '^$' || echo "Bot container not found or not running"
+if [ -n "$BOT_CONTAINER_ID" ]; then
+    docker logs --tail=20 "$BOT_CONTAINER_ID" 2>&1 | grep -v '^$'
+else
+    echo "Bot container not found or not running"
+fi
 
 echo -e "\n## Database Recent Logs ##"
 # Note: Only attempt this if we have access permissions to the postgres container
@@ -53,6 +60,6 @@ fi
 
 # Check docker stats
 echo -e "\n## Container Resource Usage ##"
-docker stats --no-stream discord_bot postgres
+docker stats --no-stream "$BOT_CONTAINER_ID" postgres
 
 echo -e "\nMonitoring completed at $(date)"
