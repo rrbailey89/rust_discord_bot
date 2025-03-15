@@ -1,12 +1,12 @@
 // commands/warn.rs
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{Member, ChannelId};
+use poise::serenity_prelude::{ChannelId, Member};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Warn a member
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn warn(
     ctx: Context<'_>,
     #[description = "Member to warn"] member: Member,

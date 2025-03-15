@@ -1,9 +1,9 @@
 // commands/update_raid_time.rs
 use crate::error::Error;
-use crate::Data;
 use crate::utils::parse_datetime;
-use poise::serenity_prelude::{ChannelId, CreateAllowedMentions};
+use crate::Data;
 use poise::serenity_prelude::EditChannel;
+use poise::serenity_prelude::{ChannelId, CreateAllowedMentions};
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
@@ -139,7 +139,7 @@ impl Raid {
 }
 
 /// Update the raid time in a channel's topic
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn updateraidtime(
     ctx: Context<'_>,
     #[description = "Select the month"] month: Month,

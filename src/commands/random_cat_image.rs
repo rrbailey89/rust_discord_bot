@@ -1,7 +1,7 @@
 // commands/random_cat_image.rs
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{CreateEmbed};
+use poise::serenity_prelude::CreateEmbed;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
@@ -22,7 +22,8 @@ pub async fn randomcatimage(ctx: Context<'_>) -> Result<(), Error> {
 
     let embed = CreateEmbed::default()
         .title("Random Cat Image")
-        .image(image_url);
+        .image(image_url)
+        .color(0xFFA500);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
