@@ -4,7 +4,8 @@ This guide will help you deploy the Discord bot on a headless Ubuntu machine usi
 
 ## Prerequisites
 
-- Docker and Docker Compose installed on your Ubuntu server
+- Docker installed on your Ubuntu server
+- Docker Compose (either as the standalone `docker-compose` command or as part of Docker with the `docker compose` command)
 - A Discord bot token
 - API keys for the various services used by the bot
 
@@ -112,8 +113,21 @@ docker logs discord_bot
 docker logs discord_bot_db
 
 # View real-time logs
+# For standalone docker-compose:
 docker-compose logs -f
+# OR for newer Docker installations:
+docker compose logs -f
 ```
+
+### Note on Docker Compose Command
+
+The scripts included in this repository automatically detect whether to use:
+- The standalone `docker-compose` command (older installations)
+- The integrated `docker compose` command (newer Docker installations)
+
+If you encounter any issues related to the Docker Compose command, make sure you have either:
+1. The standalone Docker Compose installed
+2. A recent version of Docker that includes the integrated Compose functionality
 
 ### Database Connection Issues
 
