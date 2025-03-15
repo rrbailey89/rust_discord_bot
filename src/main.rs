@@ -1,7 +1,6 @@
 // main.rs
 mod commands;
 mod config;
-mod database; // Keep for now until migration is complete
 mod error;
 mod events;
 mod utils;
