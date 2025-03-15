@@ -2,6 +2,8 @@
 
 A feature-rich Discord bot with various commands for fun, administration, and utility functions. Built with Rust using Serenity, Poise, and Tokio.
 
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](DOCKER.md)
+
 ## Key Features
 
 - **Admin Commands**: Moderation commands like `warn`, `purge`, and channel settings
@@ -28,8 +30,21 @@ cp .env.example .env
 
 ### Running the Bot
 
+#### Locally
+
 ```bash
 cargo run
+```
+
+#### Using Docker
+
+For deploying with Docker (especially on headless Ubuntu servers), see [Docker Deployment Guide](DOCKER.md).
+
+```bash
+# Quick start with Docker
+cp .env.docker .env
+# Edit .env with your configuration
+./deploy.sh
 ```
 
 ## Database Migration System
