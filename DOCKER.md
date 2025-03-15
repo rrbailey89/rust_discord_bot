@@ -1,11 +1,12 @@
-# Docker Deployment Guide
+# Docker Deployment Guide for Saltbox Network
 
-This guide will help you deploy the Discord bot on a headless Ubuntu machine using Docker.
+This guide will help you deploy the Discord bot on a headless Ubuntu machine using Docker, connecting to an existing PostgreSQL database on the saltbox network.
 
 ## Prerequisites
 
 - Docker installed on your Ubuntu server
 - Docker Compose (either as the standalone `docker-compose` command or as part of Docker with the `docker compose` command)
+- Access to the saltbox network with a running PostgreSQL server
 - A Discord bot token
 - API keys for the various services used by the bot
 
@@ -42,11 +43,11 @@ This guide will help you deploy the Discord bot on a headless Ubuntu machine usi
 ## Deployment Files
 
 - **Dockerfile**: Defines how to build the Discord bot image
-- **docker-compose.yml**: Orchestrates the bot and database containers
-- **.env.docker**: Template for environment variables
+- **docker-compose.yml**: Configures the bot container to use the existing saltbox network
+- **.env.docker**: Template for environment variables with saltbox PostgreSQL configuration
 - **deploy.sh**: Script to deploy the application
-- **backup.sh**: Script to backup the database
-- **monitor.sh**: Script to monitor the application
+- **backup.sh**: Script to backup the database (connects to the existing PostgreSQL container)
+- **monitor.sh**: Script to monitor the application and existing PostgreSQL container
 - **restart.sh**: Script to restart the containers
 - **discord-bot.service**: Systemd service file for auto-starting the application
 
@@ -133,24 +134,26 @@ If you encounter any issues related to the Docker Compose command, make sure you
 
 If the bot cannot connect to the database:
 
-1. Verify the database container is running:
+1. Verify the PostgreSQL container in the saltbox network is running:
    ```bash
-   docker ps | grep discord_bot_db
+   docker ps | grep postgres
    ```
 
-2. Check database logs for errors:
+2. Check database logs for errors (if you have permission):
    ```bash
-   docker logs discord_bot_db
+   docker logs postgres
    ```
 
 3. Verify the DATABASE_URL in .env has the correct format:
    ```
-   DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+   DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
    ```
+
+4. Ensure the PostgreSQL credentials in your .env file match those of the existing PostgreSQL server in the saltbox network.
 
 ### Container Won't Start
 
-If a container fails to start:
+If the bot container fails to start:
 
 1. Check container status:
    ```bash
@@ -162,7 +165,12 @@ If a container fails to start:
    docker logs discord_bot
    ```
 
-3. Try rebuilding the containers:
+3. Verify network connectivity to the PostgreSQL container:
+   ```bash
+   docker network inspect saltbox
+   ```
+
+4. Try rebuilding the bot container:
    ```bash
    docker-compose down
    docker-compose up -d --build

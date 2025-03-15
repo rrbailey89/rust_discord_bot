@@ -36,8 +36,9 @@ fi
 
 echo "Using ${DOCKER_COMPOSE} command"
 
-# Backup database
-docker exec discord_bot_db pg_dump -U $POSTGRES_USER $POSTGRES_DB > $BACKUP_FILE
+# Backup database from the PostgreSQL container in the saltbox network
+# Note: We're accessing the existing PostgreSQL container instead of our own
+docker exec postgres pg_dump -U $POSTGRES_USER $POSTGRES_DB > $BACKUP_FILE
 echo "Database backup created: $BACKUP_FILE"
 
 # Compress backup
