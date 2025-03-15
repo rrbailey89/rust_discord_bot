@@ -6,16 +6,28 @@ echo "======================================"
 echo "Discord Bot Monitoring - $(date)"
 echo "======================================"
 
+# Check for docker-compose command
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif command -v docker &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "Error: Neither docker-compose nor docker command found. Please install Docker and Docker Compose."
+    exit 1
+fi
+
+echo "Using ${DOCKER_COMPOSE} command"
+
 # Check container status
 echo -e "\n## Container Status ##"
 docker ps -a | grep -E 'discord_bot|discord_bot_db'
 
 # Check container logs (last 20 lines)
 echo -e "\n## Bot Recent Logs ##"
-docker logs --tail=20 discord_bot 2>&1 | grep -v '^$'
+docker logs --tail=20 discord_bot 2>&1 | grep -v '^$' || echo "Bot container not found or not running"
 
 echo -e "\n## Database Recent Logs ##"
-docker logs --tail=10 discord_bot_db 2>&1 | grep -v '^$'
+docker logs --tail=10 discord_bot_db 2>&1 | grep -v '^$' || echo "Database container not found or not running"
 
 # Check disk space
 echo -e "\n## Disk Space ##"

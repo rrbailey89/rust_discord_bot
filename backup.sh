@@ -24,6 +24,18 @@ echo "Backup directory: $BACKUP_DIR"
 
 echo "Starting database backup..."
 
+# Check for docker-compose command
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif command -v docker &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "Error: Neither docker-compose nor docker command found. Please install Docker and Docker Compose."
+    exit 1
+fi
+
+echo "Using ${DOCKER_COMPOSE} command"
+
 # Backup database
 docker exec discord_bot_db pg_dump -U $POSTGRES_USER $POSTGRES_DB > $BACKUP_FILE
 echo "Database backup created: $BACKUP_FILE"

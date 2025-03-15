@@ -23,17 +23,29 @@ fi
 mkdir -p logs
 echo "Created logs directory"
 
+# Check for docker-compose command
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif command -v docker &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "Error: Neither docker-compose nor docker command found. Please install Docker and Docker Compose."
+    exit 1
+fi
+
+echo "Using ${DOCKER_COMPOSE} command"
+
 # Build and start containers
 echo "Building and starting containers..."
-docker-compose up -d --build
+${DOCKER_COMPOSE} up -d --build
 
 # Check if containers are running
 echo "Checking container status..."
 if [ "$(docker ps -q -f name=discord_bot)" ] && [ "$(docker ps -q -f name=discord_bot_db)" ]; then
     echo "Deployment successful! Containers are running."
-    echo "Use 'docker-compose logs -f' to view logs."
+    echo "Use '${DOCKER_COMPOSE} logs -f' to view logs."
 else
     echo "Error: Containers failed to start. Checking logs..."
-    docker-compose logs
+    ${DOCKER_COMPOSE} logs
     exit 1
 fi
