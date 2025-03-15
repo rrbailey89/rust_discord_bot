@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::Data;
 use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId, Message, Interaction, Reaction, ReactionType, CreateEmbedAuthor};
 use poise::FrameworkContext;
-use crate::commands::add_role_buttons::handle_role_button;
+use crate::commands::admin::add_role_buttons::handle_role_button;
 use regex::Regex;
 use crate::DataContainer;
 

@@ -60,7 +60,7 @@ pub async fn weather(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    let api_key = &ctx.data().config.openweather_api_key;
+    let api_key = &ctx.data().config.api.openweather_api_key;
 
     // Parse the location input
     let (city, state) = parse_location(&location);

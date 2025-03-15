@@ -100,7 +100,7 @@ pub async fn fluximage(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    let api_key = &ctx.data().config.bfl_api_key;
+    let api_key = &ctx.data().config.api.bfl_api_key;
     let client = reqwest::Client::new();
 
     let mut headers = HeaderMap::new();
