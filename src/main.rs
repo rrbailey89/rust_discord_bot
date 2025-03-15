@@ -254,7 +254,7 @@ async fn main() -> Result<(), Error> {
                                 }
                             }
                         }
-                    )?;
+                    ).await?;
                     
                     info!("Reminder check task started");
                 }
@@ -271,7 +271,7 @@ async fn main() -> Result<(), Error> {
                                 error!("Error updating presence: {:?}", e);
                             }
                         }
-                    )?;
+                    ).await?;
                     
                     info!("Presence update task started");
                 }
@@ -370,7 +370,7 @@ async fn main() -> Result<(), Error> {
                                 }
                             }
                         }
-                    )?;
+                    ).await?;
                     
                     info!("Database health check task started");
                 }

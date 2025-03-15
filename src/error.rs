@@ -84,6 +84,9 @@ pub enum Error {
 
     #[error("Unknown error: {0}")]
     Unknown(String),
+    
+    #[error("Operation cancelled: {0}")]
+    Cancelled(String),
 }
 
 // A struct to provide additional context for errors
