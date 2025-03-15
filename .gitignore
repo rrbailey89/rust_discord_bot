@@ -1,3 +1,21 @@
+# Rust build artifacts
 /target
+/Cargo.lock
+
+# Configuration files
 /config.toml
 .env
+*.env
+.env.*
+!.env.example
+
+# Logs and backups
+/logs/
+/db_backups/
+*.log
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
