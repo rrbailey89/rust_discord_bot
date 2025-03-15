@@ -15,15 +15,14 @@ pub async fn help(
     #[rest]
     command: Option<String>,
 ) -> Result<(), Error> {
-    // Use Poise's simple built-in help
+    // Split the help command by categories to avoid "Message too large" error
     let config = poise::builtins::HelpConfiguration {
-        extra_text_at_bottom: "\nTip: You can also use `/help <category>` to see all commands in a category.",
         show_context_menu_commands: true,
         ephemeral: true,
+        extra_text_at_bottom: "\nUse `/help <category>` to see commands in a specific category, or `/help <command>` for detailed command help.",
         ..Default::default()
     };
     
-    // For simplicity, always use the built-in help command
     poise::builtins::help(ctx, command.as_deref(), config).await?;
     
     Ok(())
