@@ -8,6 +8,8 @@ pub mod reminder;
 mod relay;
 mod ask;
 mod health;
+mod iscaliforniaonfire;
+mod whereiscaliforniaonfire;
 
 use crate::error::Error;
 use crate::Data;
@@ -76,6 +78,18 @@ pub fn dbhealth() -> poise::Command<Data, Error> {
 
 pub fn dbschema() -> poise::Command<Data, Error> {
     let mut cmd = health::dbschema();
+    cmd.category = Some("Utility".to_string());
+    cmd
+}
+
+pub fn iscaliforniaonfire() -> poise::Command<Data, Error> {
+    let mut cmd = iscaliforniaonfire::iscaliforniaonfire();
+    cmd.category = Some("Utility".to_string());
+    cmd
+}
+
+pub fn whereiscaliforniaonfire() -> poise::Command<Data, Error> {
+    let mut cmd = whereiscaliforniaonfire::whereiscaliforniaonfire();
     cmd.category = Some("Utility".to_string());
     cmd
 }

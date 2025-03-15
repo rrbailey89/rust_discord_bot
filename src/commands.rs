@@ -43,11 +43,13 @@ pub fn get_commands() -> Vec<poise::Command<Data, Error>> {
         utility::dbschema(),
         
         // Availability commands
-        availability::iscaliforniaonfire(),
-        availability::whereiscaliforniaonfire(),
         availability::setunavailabilitychannel(),
         availability::unavailable(),
         availability::listunavailable(),
         availability::cancelunavailable(),
+        
+        // Additional Utility commands
+        utility::iscaliforniaonfire(),
+        utility::whereiscaliforniaonfire(),
     ]
 }
