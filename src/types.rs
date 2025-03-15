@@ -7,6 +7,8 @@ use postgres_types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
 use std::error::Error;
 use serde::{Deserialize, Serialize};
 use crate::Data;
+use once_cell::sync::OnceCell;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Time(pub NaiveTime);
 pub struct ShardManagerContainer;
@@ -18,6 +20,11 @@ impl TypeMapKey for ShardManagerContainer {
 impl TypeMapKey for DataContainer {
     type Value = Data;
 }
+
+// Global static reference to the bot data
+// This allows services and utilities to access the Data struct
+// without having to pass it around explicitly
+pub static DATA: OnceCell<Data> = OnceCell::new();
 
 impl<'a> FromSql<'a> for Time {
     fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
