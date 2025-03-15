@@ -31,6 +31,7 @@ pub struct DatabaseService {
     statements: Arc<DashMap<String, Statement>>,
     config: DatabaseConfig,
     migrations: Migrations,
+    statements_prepared: bool,
 }
 
 impl DatabaseService {
@@ -58,16 +59,21 @@ impl DatabaseService {
             statements: Arc::new(DashMap::new()),
             config: config.clone(),
             migrations: Migrations::new(),
+            statements_prepared: false,
         };
         
-        // Prepare commonly used statements
-        service.prepare_statements().await?;
+        // We don't prepare statements in new() anymore. They'll be prepared after migrations run.
         
         Ok(service)
     }
     
     /// Prepares commonly used statements and stores them in the cache
-    async fn prepare_statements(&self) -> Result<(), Error> {
+    pub async fn prepare_statements(&mut self) -> Result<(), Error> {
+        // If statements were already prepared, don't do it again
+        if self.statements_prepared {
+            return Ok(());
+        }
+        
         tracing::info!("Preparing commonly used database statements");
         
         let client = self.pool.get().await?;
@@ -116,6 +122,7 @@ impl DatabaseService {
             }
         }
         
+        self.statements_prepared = true;
         tracing::info!("Finished preparing {} database statements", statement_defs.len());
         Ok(())
     }

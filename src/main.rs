@@ -151,6 +151,15 @@ async fn main() -> Result<(), Error> {
         warn!("Could not determine database schema version");
     }
     
+    // Prepare database statements after migrations are applied
+    let mut database_mut = database.clone();
+    if let Err(e) = database_mut.prepare_statements().await {
+        error!("Failed to prepare database statements: {}", e);
+        return Err(e);
+    }
+    // Use the prepared version for all further operations
+    let database = database_mut;
+    
     let start_time = Arc::new(Instant::now());
 
     let config_clone = config.clone();
