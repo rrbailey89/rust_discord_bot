@@ -19,6 +19,9 @@ pub enum Error {
     #[error("Database error: {0}")]
     Database(#[from] tokio_postgres::Error),
     
+    #[error("Cache error: {0}")]
+    Cache(String),
+    
     #[error("Database pool error: {0}")]
     DbPool(#[from] deadpool_postgres::PoolError),
     

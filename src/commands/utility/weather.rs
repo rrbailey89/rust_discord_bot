@@ -60,61 +60,54 @@ pub async fn weather(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    let api_key = &ctx.data().config.api.openweather_api_key;
+    // Create a cancellation source that will be cancelled if the command times out
+    let cancellation_source = crate::utils::CancellationSource::new();
+    let token = cancellation_source.token();
+    
+    // Create an async operation context
+    let mut op_context = crate::utils::AsyncOpContext::new("weather_command")
+        .with_timeout(std::time::Duration::from_secs(10));
+    
+    // Get weather data using the cached API service with retries, timeouts, and cancellation
+    let weather_data = crate::utils::with_retry(
+        || {
+            crate::utils::cancellable(
+                ctx.data().api.get_weather(&location),
+                token.clone(),
+                "weather_fetch"
+            )
+        },
+        3, // max attempts
+        std::time::Duration::from_millis(500), // base delay
+        std::time::Duration::from_secs(2), // max delay
+        true, // use jitter
+        &mut op_context
+    ).await?;
+    
+    // Extract necessary information from the API response
+    let temp = weather_data["main"]["temp"].as_f64().unwrap_or(0.0);
+    let feels_like = weather_data["main"]["feels_like"].as_f64().unwrap_or(0.0);
+    let humidity = weather_data["main"]["humidity"].as_i64().unwrap_or(0);
+    let pressure = weather_data["main"]["pressure"].as_i64().unwrap_or(0);
+    let wind_speed = weather_data["wind"]["speed"].as_f64().unwrap_or(0.0);
+    let description = weather_data["weather"][0]["description"].as_str().unwrap_or("Unknown");
+    let city_name = weather_data["name"].as_str().unwrap_or(&location);
+    let country = weather_data["sys"]["country"].as_str().unwrap_or("Unknown");
+    let timestamp = weather_data["dt"].as_i64().unwrap_or(Utc::now().timestamp());
+    
+    // Can also fetch forecast data in a future enhancement
 
-    // Parse the location input
-    let (city, state) = parse_location(&location);
-
-    // Construct the query string for the geocoding API
-    let query = if let Some(state) = state {
-        format!("{},{},US", city, state)
-    } else {
-        city
-    };
-
-    // First, get coordinates using the geocoding API
-    let geocoding_url = format!(
-        "http://api.openweathermap.org/geo/1.0/direct?q={}&limit=1&appid={}",
-        query, api_key
-    );
-
-    let client = reqwest::Client::new();
-    let geocoding_response: Vec<GeocodingResponse> = client.get(&geocoding_url).send().await?.json().await?;
-
-    if geocoding_response.is_empty() {
-        return Err(Error::Unknown("Location not found".to_string()));
-    }
-
-    let location = &geocoding_response[0];
-
-    // Now, get the weather data using the coordinates
-    let weather_url = format!(
-        "https://api.openweathermap.org/data/3.0/onecall?lat={}&lon={}&exclude=minutely,hourly,alerts&units=imperial&appid={}",
-        location.lat, location.lon, api_key
-    );
-
-    let weather_response: WeatherResponse = client.get(&weather_url).send().await?.json().await?;
-
-    let current = &weather_response.current;
-    let daily = &weather_response.daily;
-
-    let location_name = if let Some(state) = &location.state {
-        format!("{}, {}", location.name, state)
-    } else {
-        location.name.clone()
-    };
-
+    // Create the embed to display weather data
     let embed = CreateEmbed::default()
-        .title(format!("Weather in {}, {}", location_name, location.country))
-        .field("Temperature", format!("{:.1}°F", current.temp), true)
-        .field("Feels Like", format!("{:.1}°F", current.feels_like), true)
-        .field("Humidity", format!("{}%", current.humidity), true)
-        .field("Wind Speed", format!("{:.1} mph", current.wind_speed), true)
-        .field("Pressure", format!("{} hPa", current.pressure), true)
-        .field("Description", &current.weather[0].description, false)
-        .field("Forecast", format_forecast(daily), false)
-        .footer(CreateEmbedFooter::new(format!("Timezone: {}", weather_response.timezone)))
-        .timestamp(DateTime::<Utc>::from_timestamp(current.dt, 0).unwrap())
+        .title(format!("Weather in {}, {}", city_name, country))
+        .field("Temperature", format!("{:.1}°C", temp), true)
+        .field("Feels Like", format!("{:.1}°C", feels_like), true)
+        .field("Humidity", format!("{}%", humidity), true)
+        .field("Wind Speed", format!("{:.1} m/s", wind_speed), true)
+        .field("Pressure", format!("{} hPa", pressure), true)
+        .field("Description", description, false)
+        .footer(CreateEmbedFooter::new("Powered by OpenWeatherMap"))
+        .timestamp(DateTime::<Utc>::from_timestamp(timestamp, 0).unwrap())
         .color(0x00BFFF);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;

@@ -18,6 +18,15 @@ pub enum Error {
     
     #[error("Database configuration error: {0}")]
     DbConfig(#[from] deadpool_postgres::ConfigError),
+    
+    #[error("Cache error: {0}")]
+    Cache(String),
+    
+    #[error("Cache key not found")]
+    CacheKeyNotFound,
+    
+    #[error("Cache serialization error: {0}")]
+    CacheSerialization(String),
 
     #[error("Configuration error: {0}")]
     Config(#[from] toml::de::Error),
@@ -57,6 +66,12 @@ pub enum Error {
 
     #[error("Timeout error: {0}")]
     Timeout(String),
+    
+    #[error("Operation cancelled: {0}")]
+    Cancelled(String),
+    
+    #[error("Backpressure limit reached: {0}")]
+    Backpressure(String),
 
     #[error("External service error: {service} - {message}")]
     ExternalService { service: String, message: String },

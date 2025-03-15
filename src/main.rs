@@ -11,7 +11,8 @@ mod services;
 
 use crate::config::Config;
 use crate::services::database::DatabaseService;
-use crate::services::{LoggingService, MetricsService};
+use crate::services::{LoggingService, MetricsService, TaskManager, RateLimiter};
+use crate::services::cache::CacheService;
 use crate::error::Error;
 use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::{ChannelId, CreateMessage, OnlineStatus, ActivityData};
@@ -31,7 +32,11 @@ pub struct Data {
     pub database: DatabaseService,
     pub logging: Arc<LoggingService>,
     pub metrics: Arc<MetricsService>,
+    pub cache: Arc<CacheService>,
+    pub api: Arc<crate::services::api::ApiService>,
     pub start_time: Arc<Instant>,
+    pub task_manager: Arc<crate::services::task_manager::TaskManager>,
+    pub rate_limiter: Arc<crate::services::rate_limiter::RateLimiter>,
 }
 
 async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Result<(), Error> {
@@ -116,6 +121,18 @@ async fn main() -> Result<(), Error> {
     // Start metrics logging in the background (every 5 minutes)
     metrics_service.start_metrics_logger(Duration::from_secs(300));
     
+    // Initialize cache service
+    let cache_service = Arc::new(CacheService::new(Arc::new(config.cache.clone()), metrics_service.clone()));
+    CacheService::start_cleanup_task(cache_service.clone());
+    info!("Cache service initialized with {} max entries", config.cache.max_size);
+    
+    // Initialize API service with cache
+    let api_service = Arc::new(
+        crate::services::api::ApiService::new(Arc::new(config.api.clone()))
+            .with_cache(cache_service.clone())
+    );
+    info!("API service initialized with caching enabled");
+    
     // Run database migrations
     let migrations_path = Path::new("migrations");
     match database.run_migrations(migrations_path).await {
@@ -161,12 +178,24 @@ async fn main() -> Result<(), Error> {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
+                // Initialize task manager
+                let task_manager = Arc::new(crate::services::TaskManager::new());
+                info!("Task manager initialized");
+                
+                // Initialize rate limiter
+                let rate_limiter = Arc::new(crate::services::RateLimiter::new());
+                info!("Rate limiter initialized");
+                
                 let data = Data {
                     config: Arc::new(config_clone),
                     database: database.clone(),
                     logging: logging_service.clone(),
                     metrics: metrics_service.clone(),
+                    cache: cache_service.clone(),
+                    api: api_service.clone(),
                     start_time: start_time.clone(),
+                    task_manager: task_manager.clone(),
+                    rate_limiter: rate_limiter.clone(),
                 };
 
                 // Insert Data into TypeMap
@@ -174,6 +203,10 @@ async fn main() -> Result<(), Error> {
                     let mut data_map = ctx.data.write().await;
                     data_map.insert::<DataContainer>(data.clone());
                 }
+                
+                // Set up global data access
+                let _ = crate::types::DATA.set(data.clone());
+                info!("Global data reference initialized");
 
                 // Clone Context and Data for the spawned tasks
                 let ctx_for_reminder = ctx.clone();
@@ -182,90 +215,165 @@ async fn main() -> Result<(), Error> {
                 let data_for_presence = data.clone();
                 let data_for_health_check = data.clone();
 
-                tokio::spawn(async move {
-                    let mut interval = interval(Duration::from_secs(15));
-                    loop {
-                        interval.tick().await;
-                        if let Err(e) = check_and_send_reminders(&ctx_for_reminder, &data_for_reminder).await {
-                            eprintln!("Error sending reminders: {:?}", e);
-                        }
-                    }
-                });
-
-                // Spawn the presence update task
-                tokio::spawn(async move {
-                    if let Err(e) = update_presence(ctx_for_presence, data_for_presence).await {
-                        eprintln!("Error updating presence: {:?}", e);
-                    }
-                });
+                // Use TaskManager to spawn and track background tasks
                 
-                // Spawn the database health check task
-                tokio::spawn(async move {
-                    let mut interval = interval(Duration::from_secs(30));
-                    loop {
-                        interval.tick().await;
-                        
-                        // Time the database health check
-                        let health_result = {
-                            let _timer = crate::services::TimedOperation::for_db_query(
-                                "health_check", 
-                                data_for_health_check.logging.clone()
-                            );
-                            data_for_health_check.database.check_health().await
-                        };
-                        
-                        match health_result {
-                            Ok(status) => {
-                                // Record metrics
-                                data_for_health_check.metrics.record(
-                                    &crate::services::format_metric_name(
-                                        crate::services::MetricType::DatabaseQuery, 
-                                        "pool_size"
-                                    ), 
-                                    status.size as u64
-                                );
-                                data_for_health_check.metrics.record(
-                                    &crate::services::format_metric_name(
-                                        crate::services::MetricType::DatabaseQuery, 
-                                        "pool_available"
-                                    ), 
-                                    status.available as u64
-                                );
+                // Reminders check task with cancellation support
+                {
+                    let task_name = "check_reminders";
+                    let cancellation_source = crate::utils::CancellationSource::new();
+                    let token = cancellation_source.token();
+                    
+                    data.task_manager.spawn_task_with_priority(
+                        task_name,
+                        crate::services::TaskPriority::Normal,
+                        async move {
+                            let mut interval = interval(Duration::from_secs(15));
+                            loop {
+                                interval.tick().await;
                                 
-                                // Log info
-                                info!(
-                                    size = status.size,
-                                    max_size = status.max_size,
-                                    available = status.available,
-                                    waiting = status.waiting,
-                                    "DB Pool Status"
-                                );
-                                
-                                // Log a warning if available connections are low
-                                if status.available < 3 && status.waiting > 0 {
-                                    warn!(
-                                        available = status.available,
-                                        waiting = status.waiting,
-                                        "Database connection pool pressure"
-                                    );
-                                    
-                                    // Record pressure metric
-                                    data_for_health_check.metrics.record(
-                                        &crate::services::format_metric_name(
-                                            crate::services::MetricType::DatabaseQuery, 
-                                            "pool_pressure"
-                                        ), 
-                                        1
-                                    );
+                                // Check if task has been cancelled
+                                if token.is_cancelled() {
+                                    info!("Reminder check task cancelled");
+                                    break;
                                 }
-                            },
-                            Err(e) => {
-                                error!("Database health check failed: {:?}", e);
-                                data_for_health_check.logging.log_error_occurrence("database_health_check_failure");
+                                
+                                // Create async operation context for tracking
+                                let mut op_context = crate::utils::AsyncOpContext::new("check_reminders")
+                                    .with_timeout(Duration::from_secs(10));
+                                
+                                // Execute with timeout and retry
+                                let result = crate::utils::with_timeout(
+                                    Duration::from_secs(10),
+                                    "check_reminders",
+                                    check_and_send_reminders(&ctx_for_reminder, &data_for_reminder)
+                                ).await;
+                                
+                                if let Err(e) = result {
+                                    error!("Error sending reminders: {:?}", e);
+                                    data_for_reminder.logging.log_error_occurrence("reminder_check_failure");
+                                }
                             }
                         }
-                    }
-                });
+                    )?;
+                    
+                    info!("Reminder check task started");
+                }
+
+                // Presence update task with cancellation support
+                {
+                    let task_name = "update_presence";
+                    
+                    data.task_manager.spawn_task_with_priority(
+                        task_name,
+                        crate::services::TaskPriority::Low, // Lower priority since it's not critical
+                        async move {
+                            if let Err(e) = update_presence(ctx_for_presence, data_for_presence).await {
+                                error!("Error updating presence: {:?}", e);
+                            }
+                        }
+                    )?;
+                    
+                    info!("Presence update task started");
+                }
+                
+                // Database health check task with cancellation and backpressure
+                {
+                    let task_name = "db_health_check";
+                    let cancellation_source = crate::utils::CancellationSource::new();
+                    let token = cancellation_source.token();
+                    
+                    data.task_manager.spawn_task_with_priority(
+                        task_name,
+                        crate::services::TaskPriority::High, // High priority for health monitoring
+                        async move {
+                            let mut interval = interval(Duration::from_secs(30));
+                            loop {
+                                interval.tick().await;
+                                
+                                // Check if task has been cancelled
+                                if token.is_cancelled() {
+                                    info!("Database health check task cancelled");
+                                    break;
+                                }
+                                
+                                // Use rate limiter to avoid too frequent health checks under pressure
+                                let result = data_for_health_check.rate_limiter.with_rate_limit_timeout(
+                                    "db_health_check",
+                                    1, // Only one health check at a time
+                                    Duration::from_secs(5),
+                                    async {
+                                        // Time the database health check
+                                        let health_result = {
+                                            let _timer = crate::services::TimedOperation::for_db_query(
+                                                "health_check", 
+                                                data_for_health_check.logging.clone()
+                                            );
+                                            data_for_health_check.database.check_health().await
+                                        };
+                                        
+                                        Ok::<_, Error>(health_result)
+                                    }
+                                ).await;
+                                
+                                match result {
+                                    Ok(Ok(status)) => {
+                                        // Record metrics
+                                        data_for_health_check.metrics.record(
+                                            &crate::services::format_metric_name(
+                                                crate::services::MetricType::DatabaseQuery, 
+                                                "pool_size"
+                                            ), 
+                                            status.size as u64
+                                        );
+                                        data_for_health_check.metrics.record(
+                                            &crate::services::format_metric_name(
+                                                crate::services::MetricType::DatabaseQuery, 
+                                                "pool_available"
+                                            ), 
+                                            status.available as u64
+                                        );
+                                        
+                                        // Log info
+                                        info!(
+                                            size = status.size,
+                                            max_size = status.max_size,
+                                            available = status.available,
+                                            waiting = status.waiting,
+                                            "DB Pool Status"
+                                        );
+                                        
+                                        // Log a warning if available connections are low
+                                        if status.available < 3 && status.waiting > 0 {
+                                            warn!(
+                                                available = status.available,
+                                                waiting = status.waiting,
+                                                "Database connection pool pressure"
+                                            );
+                                            
+                                            // Record pressure metric
+                                            data_for_health_check.metrics.record(
+                                                &crate::services::format_metric_name(
+                                                    crate::services::MetricType::DatabaseQuery, 
+                                                    "pool_pressure"
+                                                ), 
+                                                1
+                                            );
+                                        }
+                                    },
+                                    Ok(Err(e)) => {
+                                        error!("Database health check failed: {:?}", e);
+                                        data_for_health_check.logging.log_error_occurrence("database_health_check_failure");
+                                    },
+                                    Err(e) => {
+                                        warn!("Database health check skipped due to rate limiting: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                    )?;
+                    
+                    info!("Database health check task started");
+                }
 
                 Ok(data)
             })
