@@ -47,7 +47,7 @@ pub async fn handle_message(
 
             // If no trigger word is found, randomly get an emoji from OpenAI
             if !trigger_word_found && rand::thread_rng().gen_range(0..100) <= 15 {
-                let emoji = get_emoji_from_openai(&data.config.openai_api_key, &content).await?;
+                let emoji = get_emoji_from_openai(&data.config.api.openai_api_key, &content).await?;
                 message.react(ctx, ReactionType::Unicode(emoji)).await?;
             }
         }
@@ -82,4 +82,3 @@ async fn get_emoji_from_openai(api_key: &str, message: &str) -> Result<String, E
 
     Ok(emoji)
 }
-

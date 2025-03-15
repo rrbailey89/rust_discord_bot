@@ -46,7 +46,7 @@ pub async fn createimage(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    let openai_api_key = &ctx.data().config.openai_api_key;
+    let openai_api_key = &ctx.data().config.api.openai_api_key;
     let client = Client::with_config(async_openai::config::OpenAIConfig::new().with_api_key(openai_api_key));
 
     let size = match size {

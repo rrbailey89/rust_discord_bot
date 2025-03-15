@@ -39,7 +39,7 @@ pub async fn blame(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    let serena_id = UserId::new(ctx.data().config.serena_user_id.parse().unwrap());
+    let serena_id = UserId::new(ctx.data().config.bot.serena_user_id.parse().unwrap());
     let blamed_user = user.unwrap_or(serena_id);
     let (serena_blame_count, user_blame_count) = ctx.data().database.increment_blame_count(blamed_user.get() as i64).await?;
 

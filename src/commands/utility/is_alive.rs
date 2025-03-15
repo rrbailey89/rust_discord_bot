@@ -63,7 +63,7 @@ pub async fn lifecheck(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error
         };
 
         if let Some(selected_name) = selected_name {
-            let api_key = &ctx.data().config.api_ninjas_key;
+            let api_key = &ctx.data().config.api.api_ninjas_key;
             let client = reqwest::Client::new();
             let url = format!("https://api.api-ninjas.com/v1/celebrity?name={}", selected_name);
 
