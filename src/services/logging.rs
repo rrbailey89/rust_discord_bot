@@ -41,7 +41,9 @@ impl LoggingService {
             _ => Level::INFO,
         };
         
-            // Configure file logging if enabled
+        // Check if we need to log to both file and stdout
+        let log_to_stdout = self.config.log_to_stdout;
+        
         if let Some(file_path) = &self.config.file_path {
             let path = PathBuf::from(file_path);
             
@@ -63,26 +65,51 @@ impl LoggingService {
             
             // Set up non-blocking file appender for writing to log files
             let file_appender = tracing_appender::rolling::daily(log_dir, file_name);
-            let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+            let (non_blocking_file, file_guard) = tracing_appender::non_blocking(file_appender);
             
-            // Initialize subscriber with file appender
-            match tracing_subscriber::fmt()
-                .with_max_level(level)
-                .with_writer(non_blocking)
-                .with_ansi(false)  // Disable ANSI colors in file
-                .with_target(true) // Include targets
-                .with_thread_ids(self.config.include_thread_ids)
-                .with_thread_names(self.config.include_thread_names)
-                .try_init() {
-                    Ok(_) => {
-                        // Store _guard in static to keep it alive
-                        std::mem::forget(_guard);
-                    },
-                    Err(_) => {
-                        return Err(Error::Unknown("Failed to initialize logging".into()));
+            // Initialize subscriber based on whether we need to log to stdout too
+            if log_to_stdout {
+                // Create a subscriber that logs to both file and stdout
+                tracing::info!("Initializing logging to both file and stdout");
+                
+                match tracing_subscriber::fmt()
+                    .with_max_level(level)
+                    .with_writer(non_blocking_file)
+                    // This causes output to be duplicated to stdout as well
+                    .with_writer(std::io::stdout)
+                    .with_ansi(false)  // Disable ANSI colors in file
+                    .with_target(true) // Include targets
+                    .with_thread_ids(self.config.include_thread_ids)
+                    .with_thread_names(self.config.include_thread_names)
+                    .try_init() {
+                        Ok(_) => {
+                            // Store guard in static to keep it alive
+                            std::mem::forget(file_guard);
+                        },
+                        Err(_) => {
+                            return Err(Error::Unknown("Failed to initialize logging".into()));
+                        }
                     }
-                }
-        } else {
+            } else {
+                // File logging only
+                match tracing_subscriber::fmt()
+                    .with_max_level(level)
+                    .with_writer(non_blocking_file)
+                    .with_ansi(false)  // Disable ANSI colors in file
+                    .with_target(true) // Include targets
+                    .with_thread_ids(self.config.include_thread_ids)
+                    .with_thread_names(self.config.include_thread_names)
+                    .try_init() {
+                        Ok(_) => {
+                            // Store guard in static to keep it alive
+                            std::mem::forget(file_guard);
+                        },
+                        Err(_) => {
+                            return Err(Error::Unknown("Failed to initialize logging".into()));
+                        }
+                    }
+            }
+        } else if log_to_stdout {
             // Initialize subscriber with stdout only
             match tracing_subscriber::fmt()
                 .with_max_level(level)
@@ -95,6 +122,9 @@ impl LoggingService {
                         return Err(Error::Unknown("Failed to initialize logging".into()));
                     }
                 }
+        } else {
+            // No logging destination specified
+            return Err(Error::Unknown("No logging destination specified (neither file nor stdout)".into()));
         }
 
         tracing::info!(

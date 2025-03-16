@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tokio::time::timeout;
 use tracing::{debug, warn};
+use sysinfo::{System, Pid};
 
 pub fn parse_datetime(month: &str, day: i64, year: i64, time: &str, timezone: &str) -> Result<DateTime<Utc>, Error> {
     let month_num = match month.to_lowercase().as_str() {
@@ -412,5 +413,23 @@ fn is_retryable_error(error: &Error) -> bool {
         
         // Default to retrying for other error types
         _ => true,
+    }
+}
+
+/// Get the current memory usage of the application in KB
+pub fn get_memory_usage() -> u64 {
+    let mut system = System::new();
+    // Refresh system to get new process information
+    system.refresh_all();
+    
+    // Get current process memory
+    let pid = Pid::from(std::process::id() as usize);
+    
+    if let Some(process) = system.process(pid) {
+        // Use the memory() method to get RAM usage in KB
+        process.memory()
+    } else {
+        // Fallback if process not found
+        0
     }
 }

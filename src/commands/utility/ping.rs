@@ -1,4 +1,4 @@
-use crate::{error::Error, Data};
+use crate::{error::Error, Data, utils::get_memory_usage};
 use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use crate::types::ShardManagerContainer;
 use std::time::Duration;
@@ -29,11 +29,16 @@ pub async fn ping(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let uptime = ctx.data().start_time.elapsed();
     let uptime_str = format_duration(uptime);
 
+    // Get application's memory usage
+    let app_memory = get_memory_usage();
+    let memory_usage = format!("{:.2} MB", app_memory as f64 / 1024.0);
+
     let embed = CreateEmbed::default()
         .title("Pong! 🏓")
         .field("Guilds", guild_count.to_string(), true)
         .field("Gateway Latency", format!("{}ms", gateway_latency), true)
         .field("Uptime", uptime_str, true)
+        .field("Memory Usage", memory_usage, true)
         .color(0x00FF00);
 
     ctx.send(CreateReply::default().embed(embed)).await?;
