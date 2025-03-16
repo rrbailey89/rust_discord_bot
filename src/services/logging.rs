@@ -68,9 +68,27 @@ impl LoggingService {
             let file_appender = tracing_appender::rolling::daily(log_dir, file_name);
             let (non_blocking_file, file_guard) = tracing_appender::non_blocking(file_appender);
             
-            // Initialize subscriber based on whether we need to log to stdout too
-            if log_to_stdout {
-                // Just use file logging and let the Docker solution handle the stdout part
+            // If we're in a Docker environment and log_to_stdout is true, we'll log directly to stdout
+            // and skip file logging since Docker handles the logs directly
+            if log_to_stdout && std::env::var("DOCKER_ENVIRONMENT").is_ok() {
+                // Only log to stdout in Docker
+                match tracing_subscriber::fmt()
+                    .with_max_level(level)
+                    .with_ansi(false) // Disable ANSI colors in Docker logs
+                    .with_target(true) // Include targets
+                    .with_thread_ids(self.config.include_thread_ids)
+                    .with_thread_names(self.config.include_thread_names)
+                    .try_init() {
+                        Ok(_) => {
+                            tracing::info!("Logging initialized to stdout only (Docker environment)");
+                        },
+                        Err(_) => {
+                            return Err(Error::Unknown("Failed to initialize stdout logging".into()));
+                        }
+                    }
+            } else if log_to_stdout {
+                // For non-Docker environments with both file and stdout
+                // Set up a multi-writer subscriber
                 match tracing_subscriber::fmt()
                     .with_max_level(level)
                     .with_writer(non_blocking_file)
@@ -82,19 +100,14 @@ impl LoggingService {
                         Ok(_) => {
                             // Store guard in static to keep it alive
                             std::mem::forget(file_guard);
-                            
-                            // Print directly to stdout for immediate feedback
-                            println!("INFO: Logging initialized to file and stdout (via Docker tailing)");
-                            
-                            // Log using the tracing system (will go to file)
-                            tracing::info!("Logging initialized to file");
+                            tracing::info!("Logging initialized to file and stdout");
                         },
                         Err(_) => {
-                            return Err(Error::Unknown("Failed to initialize file logging".into()));
+                            return Err(Error::Unknown("Failed to initialize multi-destination logging".into()));
                         }
                     }
             } else {
-                // File logging only
+                // File logging only (no Docker, no stdout)
                 match tracing_subscriber::fmt()
                     .with_max_level(level)
                     .with_writer(non_blocking_file)
