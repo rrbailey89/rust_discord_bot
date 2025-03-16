@@ -240,7 +240,7 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
     info!("Starting Discord bot");
     
     let config_clone = app_data.config.as_ref().clone();
-    let framework = poise::Framework::builder()
+            let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: commands::get_commands(),
             prefix_options: poise::PrefixFrameworkOptions {
@@ -265,7 +265,9 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                 // Insert Data into TypeMap
                 {
                     let mut data_map = ctx.data.write().await;
-                    data_map.insert::<DataContainer>(app_data_clone.clone());
+                    // Clone and convert Arc<Data> to Data
+                    let data_inner = (*app_data_clone).clone();
+                    data_map.insert::<DataContainer>(data_inner);
                 }
 
                 // Clone Context and Data for the spawned tasks
