@@ -4,10 +4,9 @@ use chrono_tz::Tz;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{oneshot, Mutex, RwLock};
+use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
 use tracing::{debug, warn};
-use sysinfo::{System, Pid};
 
 pub fn parse_datetime(month: &str, day: i64, year: i64, time: &str, timezone: &str) -> Result<DateTime<Utc>, Error> {
     let month_num = match month.to_lowercase().as_str() {
@@ -416,18 +415,24 @@ fn is_retryable_error(error: &Error) -> bool {
     }
 }
 
-/// Get the current process RSS memory usage in MB (equivalent to psutil's rss)
+/// Get the current process RSS memory usage in MB
 pub fn get_memory_usage() -> u64 {
-    let mut system = System::new();
-    // Refresh system to get new process information
+    // Import with fully qualified paths to avoid issues
+    use sysinfo::System;
+    
+    // First attempt using System::new_all()
+    let mut system = System::new_all();
     system.refresh_all();
     
-    // Get current process memory
-    let pid = Pid::from(std::process::id() as usize);
+    // Get current process ID
+    let pid = std::process::id() as usize;
+    let pid = sysinfo::Pid::from(pid);
     
     if let Some(process) = system.process(pid) {
-        // Convert KB to MB (divide by 1024)
-        process.memory() / 1024
+        // Memory is directly in bytes with new sysinfo API
+        let bytes = process.memory();
+        // Convert bytes to MB
+        bytes / (1024 * 1024)
     } else {
         // Fallback if process not found
         0

@@ -24,12 +24,24 @@ ENV LOG_TO_STDOUT=true
 # Configure logs to be written to file as well
 ENV LOG_FILE_PATH=/app/logs/bot.log
 
-# Script to run the binary and tee logs to stdout for Docker
+# Script to run the binary and tail logs to stdout for Docker
 RUN echo '#!/bin/bash\n\
+# Start the application\n\
 ./Blame_Serena & \n\
 BOT_PID=$! \n\
-tail -f /app/logs/bot.log & \n\
+\n\
+# Wait a moment for log file to be created\n\
+sleep 2\n\
+\n\
+# Find the most recent log file (handles date-based log files)\n\
+LOG_FILE=$(ls -t /app/logs/bot.log* | head -n 1)\n\
+\n\
+# Start tailing that log file\n\
+echo "Tailing log file: $LOG_FILE"\n\
+tail -f "$LOG_FILE" & \n\
 TAIL_PID=$! \n\
+\n\
+# Wait for the bot to exit, then clean up\n\
 wait $BOT_PID \n\
 kill $TAIL_PID \n\
 ' > /app/run.sh && chmod +x /app/run.sh

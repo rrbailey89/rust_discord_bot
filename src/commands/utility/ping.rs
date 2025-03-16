@@ -29,7 +29,7 @@ pub async fn ping(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let uptime = ctx.data().start_time.elapsed();
     let uptime_str = format_duration(uptime);
 
-    // Get application's memory usage in MB (directly, no need for KB conversion)
+    // Get application's memory usage in MB
     let memory_mb = get_memory_usage();
     let memory_usage = format!("{}MB", memory_mb);
 
