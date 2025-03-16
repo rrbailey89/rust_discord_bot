@@ -7,6 +7,7 @@ mod utils;
 mod emoji_reaction;
 mod types;
 mod services;
+mod web;
 
 use crate::config::Config;
 use crate::services::database::DatabaseService;
@@ -162,12 +163,88 @@ async fn main() -> Result<(), Error> {
     
     let start_time = Arc::new(Instant::now());
 
-    let config_clone = config.clone();
+    // Initialize task manager
+    let task_manager = Arc::new(crate::services::TaskManager::new());
+    info!("Task manager initialized");
+    
+    // Initialize rate limiter
+    let rate_limiter = Arc::new(crate::services::RateLimiter::new());
+    info!("Rate limiter initialized");
+    
+    // Create shared app data
+    let app_data = Arc::new(Data {
+        config: Arc::new(config.clone()),
+        database: database.clone(),
+        logging: logging_service.clone(),
+        metrics: metrics_service.clone(),
+        cache: cache_service.clone(),
+        api: api_service.clone(),
+        start_time: start_time.clone(),
+        task_manager: task_manager.clone(),
+        rate_limiter: rate_limiter.clone(),
+    });
+    
+    // Initialize web server module
+    crate::web::init().await;
+    
+    // Set up global data access
+    let _ = crate::types::DATA.set(app_data.clone());
+    info!("Global data reference initialized");
+    
+    // Create handle for discord bot task
+    let discord_data = app_data.clone();
+    let discord_handle = tokio::spawn(async move {
+        if let Err(e) = start_discord_bot(discord_data).await {
+            error!("Discord bot error: {}", e);
+            Err(e)
+        } else {
+            Ok(())
+        }
+    });
+    
+    // Create handle for web server task
+    let web_data = app_data.clone();
+    let web_handle = tokio::spawn(async move {
+        info!("Starting web server");
+        if let Err(e) = crate::web::start_server(web_data, 3000).await {
+            error!("Web server error: {}", e);
+            Err(e)
+        } else {
+            Ok(())
+        }
+    });
+    
+    // Wait for both tasks to complete
+    tokio::select! {
+        discord_result = discord_handle => {
+            match discord_result {
+                Ok(Ok(())) => info!("Discord bot shut down gracefully"),
+                Ok(Err(e)) => error!("Discord bot error: {}", e),
+                Err(e) => error!("Discord bot task panicked: {}", e),
+            }
+        }
+        web_result = web_handle => {
+            match web_result {
+                Ok(Ok(())) => info!("Web server shut down gracefully"),
+                Ok(Err(e)) => error!("Web server error: {}", e),
+                Err(e) => error!("Web server task panicked: {}", e),
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+/// Start the Discord bot
+async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
+    info!("Starting Discord bot");
+    
+    let config_clone = app_data.config.as_ref().clone();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: commands::get_commands(),
             prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Some(config.bot.command_prefix.clone()),
+                prefix: Some(config_clone.bot.command_prefix.clone()),
                 edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
                     Duration::from_secs(3600)
                 ))),
@@ -180,58 +257,31 @@ async fn main() -> Result<(), Error> {
             ..Default::default()
         })
         .setup(move |ctx, _ready, framework| {
-            let config_clone = config_clone.clone();
-            let database = database.clone();
+            let app_data_clone = app_data.clone();
 
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
-                // Initialize task manager
-                let task_manager = Arc::new(crate::services::TaskManager::new());
-                info!("Task manager initialized");
-                
-                // Initialize rate limiter
-                let rate_limiter = Arc::new(crate::services::RateLimiter::new());
-                info!("Rate limiter initialized");
-                
-                let data = Data {
-                    config: Arc::new(config_clone),
-                    database: database.clone(),
-                    logging: logging_service.clone(),
-                    metrics: metrics_service.clone(),
-                    cache: cache_service.clone(),
-                    api: api_service.clone(),
-                    start_time: start_time.clone(),
-                    task_manager: task_manager.clone(),
-                    rate_limiter: rate_limiter.clone(),
-                };
-
                 // Insert Data into TypeMap
                 {
                     let mut data_map = ctx.data.write().await;
-                    data_map.insert::<DataContainer>(data.clone());
+                    data_map.insert::<DataContainer>(app_data_clone.clone());
                 }
-                
-                // Set up global data access
-                let _ = crate::types::DATA.set(data.clone());
-                info!("Global data reference initialized");
 
                 // Clone Context and Data for the spawned tasks
                 let ctx_for_reminder = ctx.clone();
                 let ctx_for_presence = ctx.clone();
-                let data_for_reminder = data.clone();
-                let data_for_presence = data.clone();
-                let data_for_health_check = data.clone();
+                let data_for_reminder = app_data_clone.clone();
+                let data_for_presence = app_data_clone.clone();
+                let data_for_health_check = app_data_clone.clone();
 
-                // Use TaskManager to spawn and track background tasks
-                
                 // Reminders check task with cancellation support
                 {
                     let task_name = "check_reminders";
                     let cancellation_source = crate::utils::CancellationSource::new();
                     let token = cancellation_source.token();
                     
-                    data.task_manager.spawn_task_with_priority(
+                    app_data_clone.task_manager.spawn_task_with_priority(
                         task_name,
                         crate::services::TaskPriority::Normal,
                         async move {
@@ -271,7 +321,7 @@ async fn main() -> Result<(), Error> {
                 {
                     let task_name = "update_presence";
                     
-                    data.task_manager.spawn_task_with_priority(
+                    app_data_clone.task_manager.spawn_task_with_priority(
                         task_name,
                         crate::services::TaskPriority::Low, // Lower priority since it's not critical
                         async move {
@@ -290,7 +340,7 @@ async fn main() -> Result<(), Error> {
                     let cancellation_source = crate::utils::CancellationSource::new();
                     let token = cancellation_source.token();
                     
-                    data.task_manager.spawn_task_with_priority(
+                    app_data_clone.task_manager.spawn_task_with_priority(
                         task_name,
                         crate::services::TaskPriority::High, // High priority for health monitoring
                         async move {
@@ -402,13 +452,13 @@ async fn main() -> Result<(), Error> {
                     info!("Database health check task started");
                 }
 
-                Ok(data)
+                Ok(app_data_clone)
             })
         })
         .build();
 
     let mut client = serenity::ClientBuilder::new(
-        &config.bot.bot_token,
+        &config_clone.bot.bot_token,
         GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
     )
         .framework(framework)

@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y libssl-dev ca-certificates && rm -rf /v
 COPY --from=builder /usr/src/app/target/release/Blame_Serena /app/
 # Copy migrations directory
 COPY --from=builder /usr/src/app/migrations /app/migrations
+# Copy static files for web server
+COPY --from=builder /usr/src/app/static /app/static
 
 # Create directory for logs
 RUN mkdir -p /app/logs
