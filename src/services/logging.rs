@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
+use tracing_subscriber::prelude::*;
 
 // Metrics for performance tracking
 static PERFORMANCE_METRICS: Lazy<Mutex<HashMap<String, Vec<u64>>>> = 
@@ -69,14 +70,10 @@ impl LoggingService {
             
             // Initialize subscriber based on whether we need to log to stdout too
             if log_to_stdout {
-                // Create a subscriber that logs to both file and stdout
-                tracing::info!("Initializing logging to both file and stdout");
-                
+                // Just use file logging and let the Docker solution handle the stdout part
                 match tracing_subscriber::fmt()
                     .with_max_level(level)
                     .with_writer(non_blocking_file)
-                    // This causes output to be duplicated to stdout as well
-                    .with_writer(std::io::stdout)
                     .with_ansi(false)  // Disable ANSI colors in file
                     .with_target(true) // Include targets
                     .with_thread_ids(self.config.include_thread_ids)
@@ -85,9 +82,15 @@ impl LoggingService {
                         Ok(_) => {
                             // Store guard in static to keep it alive
                             std::mem::forget(file_guard);
+                            
+                            // Print directly to stdout for immediate feedback
+                            println!("INFO: Logging initialized to file and stdout (via Docker tailing)");
+                            
+                            // Log using the tracing system (will go to file)
+                            tracing::info!("Logging initialized to file");
                         },
                         Err(_) => {
-                            return Err(Error::Unknown("Failed to initialize logging".into()));
+                            return Err(Error::Unknown("Failed to initialize file logging".into()));
                         }
                     }
             } else {
@@ -103,9 +106,10 @@ impl LoggingService {
                         Ok(_) => {
                             // Store guard in static to keep it alive
                             std::mem::forget(file_guard);
+                            tracing::info!("Logging initialized to file only");
                         },
                         Err(_) => {
-                            return Err(Error::Unknown("Failed to initialize logging".into()));
+                            return Err(Error::Unknown("Failed to initialize file logging".into()));
                         }
                     }
             }

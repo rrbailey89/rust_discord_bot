@@ -416,7 +416,7 @@ fn is_retryable_error(error: &Error) -> bool {
     }
 }
 
-/// Get the current memory usage of the application in KB
+/// Get the current process RSS memory usage in MB (equivalent to psutil's rss)
 pub fn get_memory_usage() -> u64 {
     let mut system = System::new();
     // Refresh system to get new process information
@@ -426,8 +426,8 @@ pub fn get_memory_usage() -> u64 {
     let pid = Pid::from(std::process::id() as usize);
     
     if let Some(process) = system.process(pid) {
-        // Use the memory() method to get RAM usage in KB
-        process.memory()
+        // Convert KB to MB (divide by 1024)
+        process.memory() / 1024
     } else {
         // Fallback if process not found
         0

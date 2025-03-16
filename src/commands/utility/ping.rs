@@ -29,9 +29,9 @@ pub async fn ping(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let uptime = ctx.data().start_time.elapsed();
     let uptime_str = format_duration(uptime);
 
-    // Get application's memory usage
-    let app_memory = get_memory_usage();
-    let memory_usage = format!("{:.2} MB", app_memory as f64 / 1024.0);
+    // Get application's memory usage in MB (directly, no need for KB conversion)
+    let memory_mb = get_memory_usage();
+    let memory_usage = format!("{}MB", memory_mb);
 
     let embed = CreateEmbed::default()
         .title("Pong! 🏓")

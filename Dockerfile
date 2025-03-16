@@ -24,5 +24,15 @@ ENV LOG_TO_STDOUT=true
 # Configure logs to be written to file as well
 ENV LOG_FILE_PATH=/app/logs/bot.log
 
-# Run the binary
-CMD ["./Blame_Serena"]
+# Script to run the binary and tee logs to stdout for Docker
+RUN echo '#!/bin/bash\n\
+./Blame_Serena & \n\
+BOT_PID=$! \n\
+tail -f /app/logs/bot.log & \n\
+TAIL_PID=$! \n\
+wait $BOT_PID \n\
+kill $TAIL_PID \n\
+' > /app/run.sh && chmod +x /app/run.sh
+
+# Run the script that redirects logs
+CMD ["/app/run.sh"]
