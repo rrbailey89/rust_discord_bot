@@ -19,10 +19,27 @@ RUN mkdir -p /app/logs
 
 # Set environment variables
 ENV RUST_LOG=info
-# Ensure logs go to stdout (for Docker logging)
+# Mark as Docker environment for logging configuration
+ENV DOCKER_ENVIRONMENT=true
+# Configure logging to go directly to stdout in Docker
 ENV LOG_TO_STDOUT=true
-# Configure logs to be written to file as well
+# Keep log file path but it will be ignored in Docker mode
 ENV LOG_FILE_PATH=/app/logs/bot.log
 
-# Run the binary
-CMD ["./Blame_Serena"]
+# Simple script to handle signals properly
+RUN echo '#!/bin/bash\n\
+# Forward signals to the application\n\
+trap "kill -TERM \$child" SIGTERM SIGINT\n\
+\n\
+# Start the application\n\
+./Blame_Serena & \n\
+child=$!\n\
+\n\
+# Wait for the application to terminate\n\
+wait "$child"\n\
+\n\
+echo "Bot application has exited with status $?"\n\
+' > /app/run.sh && chmod +x /app/run.sh
+
+# Run the application with proper signal forwarding
+CMD ["/app/run.sh"]

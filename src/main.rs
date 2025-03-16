@@ -294,7 +294,14 @@ async fn main() -> Result<(), Error> {
                         task_name,
                         crate::services::TaskPriority::High, // High priority for health monitoring
                         async move {
-                            let mut interval = interval(Duration::from_secs(30));
+                            // Increase health check interval from 30 seconds to 5 minutes to reduce log spam
+                            let mut interval = interval(Duration::from_secs(300));
+                            
+                            // Store previous status to only log changes
+                            let mut prev_size: Option<usize> = None;
+                            let mut prev_available: Option<usize> = None;
+                            let mut prev_waiting: Option<usize> = None;
+                            
                             loop {
                                 interval.tick().await;
                                 
@@ -325,7 +332,7 @@ async fn main() -> Result<(), Error> {
                                 
                                 match result {
                                     Ok(Ok(status)) => {
-                                        // Record metrics
+                                        // Record metrics - still do this every time for monitoring
                                         data_for_health_check.metrics.record(
                                             &crate::services::format_metric_name(
                                                 crate::services::MetricType::DatabaseQuery, 
@@ -341,17 +348,29 @@ async fn main() -> Result<(), Error> {
                                             status.available as u64
                                         );
                                         
-                                        // Log info
-                                        info!(
-                                            size = status.size,
-                                            max_size = status.max_size,
-                                            available = status.available,
-                                            waiting = status.waiting,
-                                            "DB Pool Status"
-                                        );
+                                        // Only log if values have changed or this is the first check
+                                        let has_changed = prev_size != Some(status.size) || 
+                                                           prev_available != Some(status.available) ||
+                                                           prev_waiting != Some(status.waiting);
+                                                           
+                                        // Always log on first run or when values change
+                                        if prev_size.is_none() || has_changed {
+                                            info!(
+                                                size = status.size,
+                                                max_size = status.max_size,
+                                                available = status.available,
+                                                waiting = status.waiting,
+                                                "DB Pool Status"
+                                            );
+                                            
+                                            // Update previous values
+                                            prev_size = Some(status.size);
+                                            prev_available = Some(status.available);
+                                            prev_waiting = Some(status.waiting);
+                                        }
                                         
-                                        // Log a warning if available connections are low
-                                        if status.available < 3 && status.waiting > 0 {
+                                        // Always log a warning if available connections are low or there are waiting connections
+                                        if status.available < 3 || status.waiting > 0 {
                                             warn!(
                                                 available = status.available,
                                                 waiting = status.waiting,
