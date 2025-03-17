@@ -6,14 +6,21 @@ use crate::web::state::WebAppState;
 use crate::web::routes;
 use crate::web::middleware::{JwtAuth, RequestLogger};
 use actix_cors::Cors;
-use actix_files::Files;
+use actix_files::{Files, NamedFile};
 use actix_web::{
     web::{self, Data as WebData},
     App, HttpResponse, HttpServer, Responder, middleware::Logger,
+    HttpRequest,
 };
 use std::net::TcpListener;
 use std::sync::Arc;
+use std::path::PathBuf;
 use tracing::{error, info};
+
+/// Handle SPA routes by serving index.html for non-API routes
+async fn spa_index() -> actix_web::Result<NamedFile> {
+    Ok(NamedFile::open("./static/index.html")?)
+}
 
 /// Start the web server
 /// 
@@ -92,8 +99,17 @@ pub async fn start_server(bot_data: Arc<Data>, port: u16) -> Result<(), crate::e
                     )
             )
             
-            // Static files - will be replaced with actual frontend files later
+            // Client-side routing support - explicitly define SPA routes
+            .route("/login", web::get().to(spa_index))
+            .route("/auth-callback", web::get().to(spa_index))
+            .route("/api/auth/callback", web::get().to(spa_index))
+            .route("/api/auth/discord/callback", web::get().to(spa_index))
+            
+            // Static files (must come after explicit routes)
             .service(Files::new("/", "./static").index_file("index.html"))
+            
+            // Fallback route for SPA
+            .default_service(web::get().to(spa_index))
     })
     .listen(listener)?
     .run()
