@@ -47,7 +47,25 @@ const AuthCallback: React.FC = () => {
   useEffect(() => {
     const processCallback = async () => {
       try {
-        // For direct response processing (current implementation)
+        // First, check if we have a token in URL parameters
+        const params = new URLSearchParams(location.search);
+        const token = params.get('token');
+        const error = params.get('error');
+        
+        // If there's an error, display it
+        if (error) {
+          setError(decodeURIComponent(error));
+          return;
+        }
+        
+        // If we have a token directly in the URL, use it
+        if (token) {
+          handleAuthCallback(token);
+          navigate('/', { replace: true });
+          return;
+        }
+        
+        // For direct JSON response processing (fallback)
         const responseText = document.body.textContent;
         if (responseText) {
           try {
@@ -62,25 +80,15 @@ const AuthCallback: React.FC = () => {
           }
         }
 
-        // For query parameter processing (fallback)
-        const params = new URLSearchParams(location.search);
+        // For OAuth2 code parameter processing
         const code = params.get('code');
-        
-        if (!code) {
-          setError('No authorization code found in the callback URL');
+        if (code) {
+          // Redirect to our backend for processing
+          window.location.href = `/api/auth/callback?code=${code}`;
           return;
         }
 
-        // Manually fetch the token from the backend
-        const response = await fetch(`/api/auth/callback?code=${code}`);
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to authenticate');
-        }
-
-        const data = await response.json();
-        handleAuthCallback(data.token);
-        navigate('/', { replace: true });
+        setError('No authentication information found in the URL');
       } catch (err) {
         console.error('Authentication error:', err);
         setError(err instanceof Error ? err.message : 'Authentication failed');

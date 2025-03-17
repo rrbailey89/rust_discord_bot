@@ -69,6 +69,7 @@ const App: React.FC = () => {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/api/auth/discord/callback" element={<AuthCallback />} />
             <Route path="/api/auth/callback" element={<AuthCallback />} />
+            <Route path="/auth-callback" element={<AuthCallback />} />
             <Route path="/" element={<Layout />}>
               <Route
                 index

@@ -79,17 +79,24 @@ async fn oauth_callback(
             let mut cookie = Cookie::new("token", auth_response.token.clone());
             cookie.set_path("/");
             cookie.set_http_only(true);
-                
-            // Return the response with cookie
-            HttpResponse::Ok()
+            
+            // Encode token for URL parameter
+            let token_param = auth_response.token.clone();
+            
+            // Redirect to frontend callback handler with token
+            HttpResponse::Found()
                 .cookie(cookie)
-                .json(auth_response)
+                .append_header(("Location", format!("/auth-callback?token={}", token_param)))
+                .finish()
         }
         Err(e) => {
             error!("Authentication error: {}", e);
-            HttpResponse::BadRequest().json(serde_json::json!({
-                "error": format!("Authentication failed: {}", e)
-            }))
+            // Redirect to error page with error message
+            let error_msg = format!("Authentication failed: {}", e);
+            HttpResponse::Found()
+                .append_header(("Location", format!("/auth-callback?error={}", 
+                    urlencoding::encode(&error_msg))))
+                .finish()
         }
     }
 }
