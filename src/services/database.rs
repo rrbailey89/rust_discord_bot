@@ -1136,11 +1136,11 @@ impl DatabaseService {
                     use tokio_postgres::types::Json;
                     match client.execute(
                         "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
-                         VALUES ($1, $2, $3, $4, $5)
+                         VALUES ($1, $2, $3, $4::jsonb, $5)
                          ON CONFLICT (guild_id, user_id)
                          DO UPDATE SET
                             nickname = EXCLUDED.nickname,
-                            roles = EXCLUDED.roles,
+                            roles = EXCLUDED.roles::jsonb,
                             joined_at = EXCLUDED.joined_at",
                         &[
                             &guild_id,
