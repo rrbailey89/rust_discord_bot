@@ -1138,13 +1138,19 @@ impl DatabaseService {
                         })
                         .unwrap_or_else(|| Vec::new());
                     
-                    // Extract joined_at timestamp
-                    let joined_at = member.get("joined_at").and_then(|j| j.as_str()).unwrap_or_default();
+                    // Attempt to parse joined_at as an ISO 8601 timestamp and store as timestamptz.
+                    use chrono::{DateTime, Utc};
+                    let joined_at_str = member.get("joined_at").and_then(|j| j.as_str()).unwrap_or("");
+                    let joined_at_dt = match DateTime::parse_from_rfc3339(joined_at_str) {
+                        Ok(dt) => Some(dt.with_timezone(&Utc)),
+                        Err(_) => None,
+                    };
                     
                     // Convert JSON roles to string
                     
                     // Store in database
                     // Now store a text[] instead of JSONB
+                    // Now bind joined_at_dt as a timestamptz param (Option<DateTime<Utc>>)
                     match client.execute(
                         "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
                          VALUES ($1, $2, $3, $4, $5)
@@ -1153,7 +1159,13 @@ impl DatabaseService {
                             nickname = EXCLUDED.nickname,
                             roles = EXCLUDED.roles,
                             joined_at = EXCLUDED.joined_at",
-                        &[&guild_id, &user_id_i64, &nickname.unwrap_or_default(), &role_names, &joined_at],
+                        &[
+                            &guild_id,
+                            &user_id_i64,
+                            &nickname.unwrap_or_default(),
+                            &role_names,
+                            &joined_at_dt
+                        ],
                     ).await {
                         Ok(_) => {
                             stored_count += 1;
