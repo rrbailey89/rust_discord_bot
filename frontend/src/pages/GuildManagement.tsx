@@ -190,6 +190,25 @@ const GuildManagement: React.FC = () => {
     enabled: !!guildId,
   });
   
+  // Also fetch guild members when we load a guild page
+  // This ensures the members data is populated in the database
+  const { data: members } = useQuery({
+    queryKey: ['guild-members', guildId],
+    queryFn: async () => {
+      try {
+        console.log(`Fetching members for guild ${guildId}`);
+        const response = await api.get(`/guilds/${guildId}/members?limit=100`);
+        console.log(`Fetched ${response.data.length} members for guild ${guildId}`);
+        return response.data;
+      } catch (err) {
+        console.error(`Error fetching members for guild ${guildId}:`, err);
+        return [];
+      }
+    },
+    enabled: !!guildId && !!guild?.botJoined,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+  
   // Handle navigation
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
