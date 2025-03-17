@@ -44,6 +44,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (payload.exp * 1000 > Date.now()) {
               setToken(storedToken);
               setUser(payload.user);
+              
+              // Set token in API headers
+              if (api.defaults.headers) {
+                api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+              }
             } else {
               // Token expired
               localStorage.removeItem('auth_token');
@@ -76,10 +81,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const handleAuthCallback = (newToken: string) => {
     try {
+      console.log('Received token:', newToken.substring(0, 10) + '...');
       localStorage.setItem('auth_token', newToken);
       const payload = JSON.parse(atob(newToken.split('.')[1]));
       setToken(newToken);
       setUser(payload.user);
+      
+      // Add token to all future API requests
+      if (api.defaults.headers) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+      }
+      
+      console.log('User authenticated:', payload.user?.username);
     } catch (e) {
       console.error('Error handling auth callback', e);
     }
