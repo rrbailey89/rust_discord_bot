@@ -27,7 +27,9 @@ pub async fn get_guild_details(
     
     // Create Discord service with user's token
     // This will need to be fetched from the user session
-    let guild_service = match state.database().get_client().await {
+use serde_json::json;
+
+let guild_service = match state.database().get_client().await {
         Ok(client) => {
             let row = match client.query_opt(
                 "SELECT discord_token FROM user_sessions WHERE user_id = $1",
@@ -69,14 +71,35 @@ pub async fn get_guild_details(
     };
     
     // Get guild details
-    match guild_service.get_guild(&guild_id).await {
-        Ok(guild) => success(guild),
-        Err(e) => {
-            error!("Error fetching guild details: {}", e);
-            error_response(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("Error fetching guild details: {}", e),
-            )
-        }
+match guild_service.get_guild(&guild_id).await {
+    Ok(guild) => {
+        // Attempt to fetch member list to get count
+        let member_count = if let Ok(members) = guild_service.get_guild_members(&guild_id, 1000).await {
+            members.len() as i64
+        } else {
+            // If an error occurs, default to 0 or handle differently as needed
+            0
+        };
+
+        // Build response object with membership status (assuming the guild is returned => joined)
+        // If you want to determine if the bot is actually part of the guild, you may need other checks
+        let result = json!({
+            "guild_id": guild.id,
+            "name": guild.name,
+            "icon": guild.icon,
+            "features": guild.features,
+            "member_count": member_count,
+            "bot_joined": true
+        });
+
+        success(result)
+    },
+    Err(e) => {
+        error!("Error fetching guild details: {}", e);
+        error_response(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Error fetching guild details: {}", e),
+        )
     }
+}
 }

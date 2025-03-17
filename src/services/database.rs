@@ -1127,12 +1127,11 @@ impl DatabaseService {
                         .get("roles")
                         .and_then(|r| r.as_array());
 
-                    // If the roles array is actually an array of role objects,
-                    // map them to each role's "name" field. Otherwise use an empty Vec.
+                    // Store the role IDs as strings
                     let role_names: Vec<String> = roles_array
                         .map(|arr| {
                             arr.iter()
-                                .filter_map(|role_obj| role_obj.get("name").and_then(|n| n.as_str()))
+                                .filter_map(|role_val| role_val.as_str())
                                 .map(|s| s.to_string())
                                 .collect()
                         })

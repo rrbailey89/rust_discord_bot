@@ -153,11 +153,11 @@ impl DiscordService {
     }
 
     /// Get detailed information about a specific guild
-    pub async fn get_guild(&self, guild_id: &str) -> Result<DiscordGuild, Error> {
-        let url = format!("{}/guilds/{}", self.api_base, guild_id);
+pub async fn get_guild(&self, guild_id: &str) -> Result<DiscordGuild, Error> {
+        let url = format!("{}/guilds/{}?with_counts=true", self.api_base, guild_id);
         debug!("Fetching guild details from Discord API: {}", url);
 
-        let response = self
+let response = self
             .client
             .get(&url)
             .headers(self.auth_headers())
@@ -225,7 +225,7 @@ impl DiscordService {
     }
 
     /// Get members of a specific guild
-    pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Vec<DiscordGuildMember>, Error> {
+pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Vec<DiscordGuildMember>, Error> {
         let url = format!("{}/guilds/{}/members?limit={}", self.api_base, guild_id, limit);
         debug!("Fetching guild members from Discord API: {}", url);
 
