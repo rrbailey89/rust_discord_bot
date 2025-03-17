@@ -1133,6 +1133,7 @@ impl DatabaseService {
                     // Convert JSON roles to string
                     
                     // Store in database
+                    use tokio_postgres::types::Json;
                     match client.execute(
                         "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
                          VALUES ($1, $2, $3, $4, $5)
@@ -1141,7 +1142,13 @@ impl DatabaseService {
                             nickname = EXCLUDED.nickname,
                             roles = EXCLUDED.roles,
                             joined_at = EXCLUDED.joined_at",
-                    &[&guild_id, &user_id_i64, &nickname.unwrap_or_default(), &roles, &joined_at],
+                        &[
+                            &guild_id,
+                            &user_id_i64,
+                            &nickname.unwrap_or_default(),
+                            &Json(&roles),
+                            &joined_at
+                        ],
                     ).await {
                         Ok(_) => {
                             stored_count += 1;
