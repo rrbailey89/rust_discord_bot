@@ -1,12 +1,13 @@
 // src/web/routes/commands.rs
 //! Command management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode};
+use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode, HttpMessage};
 use serde::Serialize;
 use tracing::{error, info, debug};
 
 use crate::error::Error;
 use crate::web::state::WebAppState;
+use crate::web::middleware::auth::Claims;
 use crate::web::models::command::{
     CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest, CommandResponse
 };
@@ -30,6 +31,21 @@ async fn list_commands(
     req: HttpRequest,
     state: web::Data<WebAppState>,
 ) -> impl Responder {
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
+    debug!("Processing request with claims: user_id={}, username={}", 
+           claims.sub, claims.user.username);
+    
     // Create command service
     let command_service = CommandService::new(state.database().clone());
     
@@ -51,13 +67,48 @@ async fn list_commands(
 async fn get_command_details(
     req: HttpRequest,
     path: web::Path<(String,)>,
+    query: web::Query<GuildQuery>,
     state: web::Data<WebAppState>,
 ) -> impl Responder {
-    // For now, use a default guild ID until auth is fixed
-    let guild_id = 123456789i64;
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
     let command_id = path.0.clone();
     
-    info!("Retrieving details for command: {}", command_id);
+    // Use guild_id from query params, or default to first available guild
+    let guild_id = match query.guild_id {
+        Some(id) => id,
+        None => {
+            // Check if user has any guilds in claims
+            if let Some(first_guild) = claims.user.guilds.first() {
+                match first_guild.parse::<i64>() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        error!("Invalid guild ID format in user claims: {}", first_guild);
+                        return HttpResponse::BadRequest().json(serde_json::json!({
+                            "error": "Invalid guild ID format"
+                        }));
+                    }
+                }
+            } else {
+                error!("No guild ID provided and user has no guilds");
+                return HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": "No guild ID provided and user has no guilds"
+                }));
+            }
+        }
+    };
+    
+    info!("Retrieving details for command: {} in guild: {}", command_id, guild_id);
     
     // Create command service
     let command_service = CommandService::new(state.database().clone());
@@ -83,12 +134,53 @@ async fn get_command_settings(
     query: web::Query<GuildQuery>,
     state: web::Data<WebAppState>,
 ) -> impl Responder {
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
     let command_id = path.0.clone();
     
-    // Use query param for guild_id or default
-    let guild_id = query.guild_id.unwrap_or(123456789);
+    // Use guild_id from query params, or check available guilds from claims
+    let guild_id = match query.guild_id {
+        Some(id) => id,
+        None => {
+            // Check if user has any guilds in claims
+            if let Some(first_guild) = claims.user.guilds.first() {
+                match first_guild.parse::<i64>() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        error!("Invalid guild ID format in user claims: {}", first_guild);
+                        return HttpResponse::BadRequest().json(serde_json::json!({
+                            "error": "Invalid guild ID format"
+                        }));
+                    }
+                }
+            } else {
+                error!("No guild ID provided and user has no guilds");
+                return HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": "No guild ID provided and user has no guilds"
+                }));
+            }
+        }
+    };
     
     info!("Retrieving settings for command: {} in guild: {}", command_id, guild_id);
+    
+    // Verify user has access to this guild
+    if !claims.user.guilds.iter().any(|g| g.parse::<i64>().map_or(false, |id| id == guild_id)) {
+        error!("User does not have access to guild {}", guild_id);
+        return HttpResponse::Forbidden().json(serde_json::json!({
+            "error": "You don't have access to this guild"
+        }));
+    }
     
     // Create command service
     let command_service = CommandService::new(state.database().clone());
@@ -115,12 +207,53 @@ async fn update_command_settings(
     settings: web::Json<UpdateCommandSettingsRequest>,
     state: web::Data<WebAppState>,
 ) -> impl Responder {
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
     let command_id = path.0.clone();
     
-    // Use query param for guild_id or default
-    let guild_id = query.guild_id.unwrap_or(123456789);
+    // Use guild_id from query params or default to first available guild
+    let guild_id = match query.guild_id {
+        Some(id) => id,
+        None => {
+            // Check if user has any guilds in claims
+            if let Some(first_guild) = claims.user.guilds.first() {
+                match first_guild.parse::<i64>() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        error!("Invalid guild ID format in user claims: {}", first_guild);
+                        return HttpResponse::BadRequest().json(serde_json::json!({
+                            "error": "Invalid guild ID format"
+                        }));
+                    }
+                }
+            } else {
+                error!("No guild ID provided and user has no guilds");
+                return HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": "No guild ID provided and user has no guilds"
+                }));
+            }
+        }
+    };
     
     info!("Updating settings for command: {} in guild: {}", command_id, guild_id);
+    
+    // Verify user has access to this guild
+    if !claims.user.guilds.iter().any(|g| g.parse::<i64>().map_or(false, |id| id == guild_id)) {
+        error!("User does not have access to guild {}", guild_id);
+        return HttpResponse::Forbidden().json(serde_json::json!({
+            "error": "You don't have access to this guild"
+        }));
+    }
     
     // Create command service
     let command_service = CommandService::new(state.database().clone());
@@ -170,9 +303,29 @@ async fn list_guild_commands(
     path: web::Path<i64>,
     state: web::Data<WebAppState>,
 ) -> impl Responder {
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
     let guild_id = path.into_inner();
     
     info!("Retrieving all commands for guild: {}", guild_id);
+    
+    // Verify user has access to this guild
+    if !claims.user.guilds.iter().any(|g| g.parse::<i64>().map_or(false, |id| id == guild_id)) {
+        error!("User does not have access to guild {}", guild_id);
+        return HttpResponse::Forbidden().json(serde_json::json!({
+            "error": "You don't have access to this guild"
+        }));
+    }
     
     // Create services
     let command_service = CommandService::new(state.database().clone());
