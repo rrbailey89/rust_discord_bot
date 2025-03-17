@@ -1122,10 +1122,21 @@ impl DatabaseService {
                     // Extract other member fields
                     let nickname = member.get("nick").and_then(|n| n.as_str());
                     
-                    // Extract roles as a JSON array
-                    let roles = member.get("roles").and_then(|r| r.as_array())
-                        .map(|arr| serde_json::to_value(arr).unwrap_or(serde_json::Value::Array(vec![])))
-                        .unwrap_or(serde_json::Value::Array(vec![]));
+                    // Instead of storing roles as JSONB, parse them into a Vec<String> to store in the text[] column.
+                    let roles_array = member
+                        .get("roles")
+                        .and_then(|r| r.as_array());
+
+                    // If the roles array is actually an array of role objects,
+                    // map them to each role's "name" field. Otherwise use an empty Vec.
+                    let role_names: Vec<String> = roles_array
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|role_obj| role_obj.get("name").and_then(|n| n.as_str()))
+                                .map(|s| s.to_string())
+                                .collect()
+                        })
+                        .unwrap_or_else(|| Vec::new());
                     
                     // Extract joined_at timestamp
                     let joined_at = member.get("joined_at").and_then(|j| j.as_str()).unwrap_or_default();
@@ -1133,22 +1144,16 @@ impl DatabaseService {
                     // Convert JSON roles to string
                     
                     // Store in database
-                    use tokio_postgres::types::Json;
+                    // Now store a text[] instead of JSONB
                     match client.execute(
                         "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
-                         VALUES ($1, $2, $3, $4::jsonb, $5)
+                         VALUES ($1, $2, $3, $4, $5)
                          ON CONFLICT (guild_id, user_id)
                          DO UPDATE SET
                             nickname = EXCLUDED.nickname,
-                            roles = EXCLUDED.roles::jsonb,
+                            roles = EXCLUDED.roles,
                             joined_at = EXCLUDED.joined_at",
-                        &[
-                            &guild_id,
-                            &user_id_i64,
-                            &nickname.unwrap_or_default(),
-                            &Json(&roles),
-                            &joined_at
-                        ],
+                        &[&guild_id, &user_id_i64, &nickname.unwrap_or_default(), &role_names, &joined_at],
                     ).await {
                         Ok(_) => {
                             stored_count += 1;
