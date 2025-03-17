@@ -111,18 +111,18 @@ done
 
 echo -e "${GREEN}Deploying application with Docker Compose...${NC}"
 # Use both .env and the dynamic labels file
-docker-compose --env-file .env --env-file "$LABELS_FILE" down
-docker-compose --env-file .env --env-file "$LABELS_FILE" up -d --build
+docker compose --env-file .env --env-file "$LABELS_FILE" down
+docker compose --env-file .env --env-file "$LABELS_FILE" up -d --build
 
 echo -e "${GREEN}Checking container status...${NC}"
-docker-compose ps
+docker compose ps
 
 echo -e "${GREEN}Deployment complete!${NC}"
 echo "Your Discord bot and web frontend should now be accessible at:"
 echo -e "${YELLOW}https://$TRAEFIK_DOMAIN${NC}"
 echo ""
 echo "To view logs:"
-echo -e "${YELLOW}docker-compose logs -f${NC}"
+echo -e "${YELLOW}docker compose logs -f${NC}"
 echo ""
 echo "To stop the application:"
-echo -e "${YELLOW}docker-compose down${NC}"
+echo -e "${YELLOW}docker compose down${NC}"
