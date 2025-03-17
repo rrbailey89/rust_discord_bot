@@ -43,7 +43,7 @@ set +a
 # Validate required environment variables
 echo -e "${GREEN}Validating environment variables...${NC}"
 required_vars=(
-    "DISCORD_TOKEN"
+    "BOT_TOKEN"
     "APPLICATION_ID"
     "DATABASE_URL"
     "TRAEFIK_DOMAIN"
