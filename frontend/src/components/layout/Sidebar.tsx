@@ -137,7 +137,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onGuildSelect }) => {
   
   // Filter guilds based on search term
   const filteredGuilds = user?.guilds?.filter((guild) =>
-    guild.name.toLowerCase().includes(searchTerm.toLowerCase())
+    guild.name && guild.name.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
   const handleGuildClick = (guild: Guild) => {
@@ -147,7 +147,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onGuildSelect }) => {
   };
 
   // Get initial letter of guild name for avatar fallback
-  const getInitial = (name: string) => name.charAt(0).toUpperCase();
+  const getInitial = (name: string) => name && name.length > 0 ? name.charAt(0).toUpperCase() : '?';
 
   // Convert Discord icon hash to URL
   const getIconUrl = (guildId: string, iconHash?: string) => {
