@@ -188,6 +188,15 @@ async fn main() -> Result<(), Error> {
     let _ = crate::types::DATA.set(app_data.clone());
     info!("Global data reference initialized");
     
+    // Start Discord bot in a background task
+    let bot_app_data = app_data.clone();
+    tokio::task::spawn(async move {
+        info!("Starting Discord bot in background task");
+        if let Err(e) = start_discord_bot(bot_app_data).await {
+            error!("Discord bot error: {}", e);
+        }
+    });
+    
     // Initialize web module
     web::init().await;
     
@@ -197,39 +206,12 @@ async fn main() -> Result<(), Error> {
         .parse::<u16>()
         .unwrap_or(3000);
     
-    // Create tasks for both the web server and the Discord bot to run concurrently
-    info!("Starting web server and Discord bot concurrently");
+    // Start the web server in the main thread
+    info!("Starting web server on port {}", web_port);
+    web::start_server(app_data.clone(), web_port).await?;
     
-    // Clone data for both tasks
-    let web_app_data = app_data.clone();
-    let bot_app_data = app_data.clone();
-    
-    // Create the web server task
-    let web_task = tokio::spawn(async move {
-        info!("Starting web server on port {}", web_port);
-        match web::start_server(web_app_data, web_port).await {
-            Ok(_) => info!("Web server stopped"),
-            Err(e) => error!("Web server error: {}", e),
-        }
-    });
-    
-    // Create the Discord bot task
-    let bot_task = tokio::spawn(async move {
-        info!("Starting Discord bot");
-        if let Err(e) = start_discord_bot(bot_app_data).await {
-            error!("Discord bot error: {}", e);
-        }
-    });
-    
-    // Wait for both tasks to complete (though they should run indefinitely)
-    tokio::select! {
-        _ = web_task => {
-            error!("Web server task unexpectedly terminated");
-        }
-        _ = bot_task => {
-            error!("Discord bot task unexpectedly terminated");
-        }
-    }
+    // We'll only get here if the web server stops normally
+    info!("Web server stopped normally, shutting down application");
     
     Ok(())
 }
