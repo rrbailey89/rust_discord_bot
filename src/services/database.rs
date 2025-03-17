@@ -1102,6 +1102,83 @@ impl DatabaseService {
         Ok(())
     }
     
+    /// Store guild member information in the database
+    pub async fn store_guild_members(
+        &self,
+        guild_id: i64,
+        members: &[serde_json::Value],
+    ) -> Result<usize, Error> {
+        let client = self.pool.get().await?;
+        let mut stored_count = 0;
+        
+        for member in members {
+            // Extract member data from JSON
+            if let (Some(user), Some(user_id)) = (
+                member.get("user"),
+                member.get("user").and_then(|u| u.get("id")).and_then(|id| id.as_str())
+            ) {
+                // Parse user ID to i64
+                if let Ok(user_id_i64) = user_id.parse::<i64>() {
+                    // Extract other member fields
+                    let nickname = member.get("nick").and_then(|n| n.as_str());
+                    
+                    // Extract roles as a JSON array
+                    let roles = member.get("roles").and_then(|r| r.as_array())
+                        .map(|arr| serde_json::to_value(arr).unwrap_or(serde_json::Value::Array(vec![])))
+                        .unwrap_or(serde_json::Value::Array(vec![]));
+                    
+                    // Extract joined_at timestamp
+                    let joined_at = member.get("joined_at").and_then(|j| j.as_str()).unwrap_or_default();
+                    
+                    // Store in database
+                    match client.execute(
+                        "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at, last_updated)
+                         VALUES ($1, $2, $3, $4, $5, NOW())
+                         ON CONFLICT (guild_id, user_id)
+                         DO UPDATE SET
+                            nickname = EXCLUDED.nickname,
+                            roles = EXCLUDED.roles,
+                            joined_at = EXCLUDED.joined_at,
+                            last_updated = NOW()",
+                        &[&guild_id, &user_id_i64, &nickname, &roles, &joined_at],
+                    ).await {
+                        Ok(_) => {
+                            stored_count += 1;
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to store guild member {}: {}", user_id, e);
+                        }
+                    }
+                    
+                    // Also store basic user information from the user object
+                    if let (Some(username), Some(discriminator)) = (
+                        user.get("username").and_then(|u| u.as_str()),
+                        user.get("discriminator").and_then(|d| d.as_str())
+                    ) {
+                        let avatar = user.get("avatar").and_then(|a| a.as_str());
+                        
+                        // Store user data
+                        if let Err(e) = client.execute(
+                            "INSERT INTO users (user_id, username, discriminator, avatar)
+                             VALUES ($1, $2, $3, $4)
+                             ON CONFLICT (user_id)
+                             DO UPDATE SET
+                                username = EXCLUDED.username,
+                                discriminator = EXCLUDED.discriminator,
+                                avatar = EXCLUDED.avatar,
+                                last_updated = NOW()",
+                            &[&user_id_i64, &username, &discriminator, &avatar],
+                        ).await {
+                            tracing::warn!("Failed to store user data for {}: {}", user_id, e);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(stored_count)
+    }
+    
     /// Optimized version of store_guild_channels that processes channels in sequence
     pub async fn store_guild_channels_batch(&self, guild: &Guild) -> Result<(), Error> {
         if guild.channels.is_empty() {

@@ -84,7 +84,50 @@ pub async fn get_guild_members(
     
     // Get guild members
     match discord_service.get_guild_members(&guild_id, limit).await {
-        Ok(members) => success(members),
+        Ok(members) => {
+            // Store fetched members in the database
+            let guild_id_i64 = match guild_id.parse::<i64>() {
+                Ok(id) => id,
+                Err(e) => {
+                    error!("Failed to parse guild ID: {}", e);
+                    return error_response(
+                        actix_web::http::StatusCode::BAD_REQUEST,
+                        "Invalid guild ID format",
+                    );
+                }
+            };
+            
+            // Convert the members to JSON for storage
+            let members_json = match serde_json::to_value(&members) {
+                Ok(json) => {
+                    if let Some(members_array) = json.as_array() {
+                        // Extract just the array part for storage
+                        serde_json::to_value(members_array).unwrap_or(serde_json::Value::Array(vec![]))
+                    } else {
+                        serde_json::Value::Array(vec![])
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to serialize members to JSON: {}", e);
+                    serde_json::Value::Array(vec![])
+                }
+            };
+            
+            // Store in database if we have valid JSON
+            if let Some(members_array) = members_json.as_array() {
+                match state.database().store_guild_members(guild_id_i64, members_array).await {
+                    Ok(count) => {
+                        info!("Stored {} members for guild {}", count, guild_id);
+                    },
+                    Err(e) => {
+                        error!("Error storing guild members: {}", e);
+                    }
+                }
+            }
+            
+            // Return the members to the caller regardless of storage success
+            success(members)
+        },
         Err(e) => {
             error!("Error fetching guild members: {}", e);
             error_response(

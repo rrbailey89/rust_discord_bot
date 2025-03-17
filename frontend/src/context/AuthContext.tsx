@@ -138,32 +138,50 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async () => {
+    console.log('Logout function called');
     try {
       // Clear token in API headers if exists
       if (api.defaults.headers) {
+        console.log('Removing Authorization header');
         delete api.defaults.headers.common['Authorization'];
       }
       
+      // Log current cookies
+      console.log('Current cookies before logout:', document.cookie);
+      
       // Call server-side logout endpoint
-      await api.post('/api/auth/logout').catch((e) => {
+      console.log('Calling server-side logout endpoint');
+      try {
+        const response = await api.post('/api/auth/logout');
+        console.log('Logout API response:', response.status, response.data);
+      } catch (e) {
         // If server-side logout fails, we still want to clear client-side data
         console.error('Logout API error:', e);
-      });
+      }
     } catch (e) {
       console.error('Logout error:', e);
     } finally {
+      console.log('Cleaning up client-side auth data');
+      
       // Clear client-side storage
       localStorage.removeItem('auth_token');
+      console.log('Removed auth_token from localStorage');
       
       // Clear cookies - both the http-only and js-accessible versions
       document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
       document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      console.log('Cleared auth cookies');
+      
+      // Double check cookies are cleared
+      console.log('Cookies after clearing:', document.cookie);
       
       // Update state
       setToken(null);
       setUser(null);
+      console.log('Reset auth state');
       
       // Redirect to home page after logout
+      console.log('Redirecting to home page');
       window.location.href = '/';
     }
   };

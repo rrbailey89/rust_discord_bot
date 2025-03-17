@@ -101,9 +101,22 @@ const Header: React.FC = () => {
         <>
           <Navigation>
             <NavLink to="/">Dashboard</NavLink>
-            <NavLink to="/commands">Commands</NavLink>
-            <NavLink to="/word-detection">Word Detection</NavLink>
-            <NavLink to="/settings">Settings</NavLink>
+            {/* These links will work from guild management page context */}
+            <NavLink to={window.location.pathname.includes('/guilds/') 
+              ? `${window.location.pathname.split('/').slice(0, 3).join('/')}/commands` 
+              : "/"}>
+              Commands
+            </NavLink>
+            <NavLink to={window.location.pathname.includes('/guilds/') 
+              ? `${window.location.pathname.split('/').slice(0, 3).join('/')}/word-detection` 
+              : "/"}>
+              Word Detection
+            </NavLink>
+            <NavLink to={window.location.pathname.includes('/guilds/') 
+              ? `${window.location.pathname.split('/').slice(0, 3).join('/')}/settings` 
+              : "/"}>
+              Settings
+            </NavLink>
             <NavLink to="/analytics">Analytics</NavLink>
           </Navigation>
           
