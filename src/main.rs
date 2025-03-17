@@ -188,27 +188,47 @@ async fn main() -> Result<(), Error> {
     let _ = crate::types::DATA.set(app_data.clone());
     info!("Global data reference initialized");
     
-    // Start Discord bot in the main thread
-    info!("Starting Discord bot");
-    if let Err(e) = start_discord_bot(app_data.clone()).await {
-        error!("Discord bot error: {}", e);
-        return Err(e);
-    }
-    
-    // Start the web server
-    let web_app_data = app_data.clone();
+    // Initialize web module
     web::init().await;
     
     // Default web server port
     let web_port = std::env::var("WEB_SERVER_PORT")
-        .unwrap_or_else(|_| "8080".to_string())
+        .unwrap_or_else(|_| "3000".to_string())
         .parse::<u16>()
-        .unwrap_or(8080);
+        .unwrap_or(3000);
     
-    info!("Starting web server on port {}", web_port);
-    match web::start_server(web_app_data, web_port).await {
-        Ok(_) => info!("Web server stopped"),
-        Err(e) => error!("Web server error: {}", e),
+    // Create tasks for both the web server and the Discord bot to run concurrently
+    info!("Starting web server and Discord bot concurrently");
+    
+    // Clone data for both tasks
+    let web_app_data = app_data.clone();
+    let bot_app_data = app_data.clone();
+    
+    // Create the web server task
+    let web_task = tokio::spawn(async move {
+        info!("Starting web server on port {}", web_port);
+        match web::start_server(web_app_data, web_port).await {
+            Ok(_) => info!("Web server stopped"),
+            Err(e) => error!("Web server error: {}", e),
+        }
+    });
+    
+    // Create the Discord bot task
+    let bot_task = tokio::spawn(async move {
+        info!("Starting Discord bot");
+        if let Err(e) = start_discord_bot(bot_app_data).await {
+            error!("Discord bot error: {}", e);
+        }
+    });
+    
+    // Wait for both tasks to complete (though they should run indefinitely)
+    tokio::select! {
+        _ = web_task => {
+            error!("Web server task unexpectedly terminated");
+        }
+        _ = bot_task => {
+            error!("Discord bot task unexpectedly terminated");
+        }
     }
     
     Ok(())
