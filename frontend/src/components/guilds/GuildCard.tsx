@@ -132,7 +132,7 @@ const getIconUrl = (guildId: string, iconHash?: string) => {
 };
 
 // Get initial letter of guild name for avatar fallback
-const getInitial = (name: string) => name.charAt(0).toUpperCase();
+const getInitial = (name: string) => name && name.length > 0 ? name.charAt(0).toUpperCase() : '?';
 
 const GuildCard: React.FC<GuildCardProps> = ({ 
   guild, 
@@ -148,7 +148,7 @@ const GuildCard: React.FC<GuildCardProps> = ({
           {!guild.icon && getInitial(guild.name)}
         </GuildIcon>
         <GuildInfo>
-          <GuildName>{guild.name}</GuildName>
+          <GuildName>{guild.name || 'Unnamed Server'}</GuildName>
           <GuildMeta>{guild.botJoined ? 'Bot is active' : 'Bot not joined'}</GuildMeta>
         </GuildInfo>
       </Header>

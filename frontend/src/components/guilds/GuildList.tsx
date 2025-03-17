@@ -112,7 +112,7 @@ const GuildList: React.FC = () => {
   
   // Filter guilds based on search term
   const filteredGuilds = guilds?.filter(guild => 
-    guild.name.toLowerCase().includes(searchTerm.toLowerCase())
+    guild.name && guild.name.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
   
   // Navigation handlers
