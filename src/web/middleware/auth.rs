@@ -54,6 +54,44 @@ impl JwtAuth {
     }
 }
 
+/// JWT Authentication middleware implementation
+pub struct JwtAuthMiddleware<S> {
+    service: Rc<S>,
+    secret: String,
+}
+
+impl<S> JwtAuthMiddleware<S> {
+    /// Extract token from various sources (header, cookie, etc.)
+    fn extract_token_from_request(req: &ServiceRequest) -> Option<String> {
+        // First try Authorization header
+        if let Some(auth_header) = req.headers().get(header::AUTHORIZATION) {
+            if let Ok(auth_str) = auth_header.to_str() {
+                if auth_str.starts_with("Bearer ") {
+                    tracing::debug!("Found token in Authorization header");
+                    return Some(auth_str[7..].to_string());
+                }
+            }
+        }
+        
+        // Then try cookies
+        if let Some(cookie) = req.cookie("token") {
+            tracing::debug!("Found token in 'token' cookie");
+            return Some(cookie.value().to_string());
+        }
+        
+        if let Some(cookie) = req.cookie("auth_token") {
+            tracing::debug!("Found token in 'auth_token' cookie");
+            return Some(cookie.value().to_string());
+        }
+        
+        // Log that we didn't find a token
+        tracing::debug!("No authentication token found in request: {}", req.path());
+        
+        // No valid token found
+        None
+    }
+}
+
 impl<S, B> Transform<S, ServiceRequest> for JwtAuth
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
@@ -74,12 +112,6 @@ where
     }
 }
 
-/// JWT Authentication middleware implementation
-pub struct JwtAuthMiddleware<S> {
-    service: Rc<S>,
-    secret: String,
-}
-
 impl<S, B> Service<ServiceRequest> for JwtAuthMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
@@ -95,40 +127,25 @@ where
     }
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        // Check if token is in the Authorization header
-        let auth_header = req.headers().get(header::AUTHORIZATION);
+        // Get a potential token from multiple sources
+        let token_opt = Self::extract_token_from_request(&req);
         
-        if auth_header.is_none() {
-            return Box::pin(futures_util::future::err(
-                ErrorUnauthorized("No authorization header provided")
-            ));
-        }
-        
-        let auth_value = auth_header.unwrap().to_str();
-        
-        if auth_value.is_err() {
-            return Box::pin(futures_util::future::err(
-                ErrorUnauthorized("Invalid authorization header format")
-            ));
-        }
-        
-        let auth_string = auth_value.unwrap();
-        
-        // Check if it's a bearer token
-        if !auth_string.starts_with("Bearer ") {
-            return Box::pin(futures_util::future::err(
-                ErrorUnauthorized("Invalid authorization scheme, expected Bearer")
-            ));
-        }
-        
-        // Extract the token
-        let token = &auth_string[7..];
+        // If no token found, return unauthorized
+        let token = match token_opt {
+            Some(token) => token,
+            None => {
+                return Box::pin(futures_util::future::err(
+                    ErrorUnauthorized("No valid authentication token found")
+                ));
+            }
+        };
         
         // Decode and validate the token
         let secret = self.secret.clone();
         let validation = Validation::new(Algorithm::HS256);
         
-        match decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation) {
+        let token_str = token.as_str();
+        match decode::<Claims>(token_str, &DecodingKey::from_secret(secret.as_bytes()), &validation) {
             Ok(token_data) => {
                 // Store claims in request extensions for handlers to access
                 req.extensions_mut().insert(token_data.claims);
