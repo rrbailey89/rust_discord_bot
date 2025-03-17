@@ -1,7 +1,7 @@
 // src/web/routes/guilds.rs
 //! Guild management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode};
+use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode, HttpMessage};
 use serde::Serialize;
 use tracing::{error, info, debug};
 
@@ -28,13 +28,33 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 }
 
 /// List guilds the user has access to
-/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn list_guilds(
     req: HttpRequest,
     state: web::Data<WebAppState>
 ) -> impl Responder {
-    // For now, use a default user ID for testing
-    let user_id = 123456789i64;
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
+    // Log claims for debugging
+    debug!("Processing request with claims: user_id={}, username={}", 
+           claims.sub, claims.user.username);
+    
+    // Parse user ID from JWT subject
+    let user_id = match claims.sub.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Invalid user ID format"
+        })),
+    };
     
     // Get user session with Discord token
     let auth_service = AuthService::new(
@@ -115,14 +135,30 @@ async fn list_guilds(
 }
 
 /// Get details for a specific guild
-/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn get_guild(
     req: HttpRequest,
     path: web::Path<String>,
     state: web::Data<WebAppState>
 ) -> impl Responder {
-    // For now, use a default user ID for testing
-    let user_id = 123456789i64;
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
+    // Parse user ID from JWT subject
+    let user_id = match claims.sub.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "Invalid user ID format"
+        })),
+    };
     
     let guild_id = path.into_inner();
     info!("Retrieving details for guild: {}", guild_id);
@@ -231,12 +267,23 @@ async fn get_guild(
 }
 
 /// Get settings for a specific guild
-/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn get_guild_settings(
     req: HttpRequest,
     path: web::Path<String>,
     state: web::Data<WebAppState>
 ) -> impl Responder {
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
     let guild_id = path.into_inner();
     info!("Retrieving settings for guild: {}", guild_id);
     
@@ -284,13 +331,24 @@ async fn get_guild_settings(
 }
 
 /// Update settings for a specific guild
-/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn update_guild_settings(
     req: HttpRequest,
     path: web::Path<String>,
     settings: web::Json<UpdateGuildSettingsRequest>,
     state: web::Data<WebAppState>
 ) -> impl Responder {
+    // Get authenticated user from request extensions
+    let extensions = req.extensions();
+    let claims = match extensions.get::<Claims>() {
+        Some(claims) => claims,
+        None => {
+            error!("No authentication claims found in request");
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "Not authenticated"
+            }));
+        }
+    };
+    
     let guild_id = path.into_inner();
     info!("Updating settings for guild: {}", guild_id);
     

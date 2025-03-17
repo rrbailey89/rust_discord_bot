@@ -5,6 +5,7 @@ use crate::config::WebConfig;
 use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::auth::{UserSession, DiscordUser, DiscordTokenResponse, TokenClaims, UserInfo, AuthResponse};
+use crate::web::services::discord::DiscordGuild;
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{encode, decode, Header, EncodingKey, DecodingKey, Validation, Algorithm};
 use oauth2::{
@@ -161,6 +162,40 @@ impl AuthService {
             .map_err(|e| Error::Unknown(format!("Failed to parse Discord user response: {}", e)))?;
             
         Ok(user)
+    }
+    
+    /// Fetch user's guilds from Discord API
+    pub async fn fetch_discord_guilds(&self, access_token: &str) -> Result<Vec<DiscordGuild>, Error> {
+        // Create headers with authorization
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", access_token))
+                .map_err(|e| Error::Unknown(format!("Invalid header value: {}", e)))?,
+        );
+        
+        // Fetch guilds data from Discord API
+        let response = self.http_client
+            .get("https://discord.com/api/v10/users/@me/guilds")
+            .headers(headers)
+            .send()
+            .await
+            .map_err(|e| Error::Unknown(format!("Discord API request error: {}", e)))?;
+            
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await
+                .unwrap_or_else(|_| "Could not read response body".to_string());
+                
+            error!("Discord API error when fetching guilds: Status {}, Body: {}", status, text);
+            return Err(Error::Unknown(format!("Discord API error: {}", status)));
+        }
+        
+        // Parse the response
+        let guilds: Vec<DiscordGuild> = response.json().await
+            .map_err(|e| Error::Unknown(format!("Failed to parse Discord guilds response: {}", e)))?;
+            
+        Ok(guilds)
     }
     
     /// Store user session in the database
@@ -350,12 +385,25 @@ impl AuthService {
         // Store user session
         self.store_user_session(user.id.parse::<i64>().unwrap_or_default(), &token).await?;
         
-        // For this initial version, we'll just use an empty guilds list
-        // In Phase 2, we'll implement fetching the user's guilds
-        let guilds = vec![];
+        // Fetch user's guilds from Discord API
+        let guilds = self.fetch_discord_guilds(&token.access_token).await
+            .map(|discord_guilds| {
+                // Extract just the guild IDs
+                discord_guilds.into_iter()
+                    .map(|g| g.id)
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_else(|e| {
+                // Log the error but continue with empty guilds
+                error!("Failed to fetch guilds for user {}: {}", user.id, e);
+                vec![]
+            });
+        
+        // Log how many guilds we found
+        info!("Found {} guilds for user {}", guilds.len(), user.id);
         
         // Generate JWT
-        let (jwt, expires_in) = self.generate_jwt(&user, guilds)?;
+        let (jwt, expires_in) = self.generate_jwt(&user, guilds.clone())?;
         
         // Build the response
         let auth_response = AuthResponse {
@@ -370,7 +418,7 @@ impl AuthService {
                         user.id, avatar
                     )
                 }),
-                guilds: vec![],
+                guilds, // Use the fetched guilds array
             },
         };
         
