@@ -27,9 +27,10 @@ pub struct RefreshTokenRequest {
 /// Configure authentication routes
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/auth")
+        web::scope("")
             .route("/login", web::get().to(login))
             .route("/callback", web::get().to(oauth_callback))
+            .route("/discord/callback", web::get().to(oauth_callback))  // Add compatibility with Discord's expected callback
             .route("/refresh", web::post().to(refresh_token))
     );
 }

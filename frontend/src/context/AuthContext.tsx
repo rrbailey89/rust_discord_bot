@@ -62,6 +62,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = () => {
+    // Redirect to the Discord OAuth login endpoint
     window.location.href = '/api/auth/login';
   };
 
