@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import Layout from './components/layout/Layout';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import LoginPage from './pages/Login';
+import AuthCallback from './pages/AuthCallback';
 import Home from './pages/Home';
 import GuildManagement from './pages/GuildManagement';
 import CommandConfig from './pages/CommandConfig';
@@ -66,6 +67,8 @@ const App: React.FC = () => {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/api/auth/discord/callback" element={<AuthCallback />} />
+            <Route path="/api/auth/callback" element={<AuthCallback />} />
             <Route path="/" element={<Layout />}>
               <Route
                 index
