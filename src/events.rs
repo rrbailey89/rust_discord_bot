@@ -58,7 +58,7 @@ pub async fn handle_event(
     Ok(())
 }
 
-async fn handle_guild_create(_ctx: &Context, guild: &Guild, data: &Data) -> Result<(), Error> {
+async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Result<(), Error> {
     // Log guild creation
     tracing::info!("Guild Create event received for: {} (ID: {})", guild.name, guild.id);
 
@@ -67,6 +67,56 @@ async fn handle_guild_create(_ctx: &Context, guild: &Guild, data: &Data) -> Resu
 
     // Store guild channels in the database
     data.database.store_guild_channels(guild).await?;
+    
+    // Additionally, fetch and store the guild members
+    // We'll do this in a separate task to not delay the guild create handling
+    let ctx_clone = ctx.clone();
+    let guild_id = guild.id;
+    let database = data.database.clone();
+    
+    // Spawn a background task to fetch and store members
+    tokio::spawn(async move {
+        tracing::info!("Starting background task to fetch members for guild {}", guild_id);
+        
+        // Fetch the first batch of members (up to 1000)
+        match guild_id.members(&ctx_clone.http, None, None).await {
+            Ok(members) => {
+                tracing::info!("Fetched {} members for guild {}", members.len(), guild_id);
+                
+                // Convert members to JSON format expected by store_guild_members
+                let members_json: Vec<serde_json::Value> = members.iter().map(|m| {
+                    let user = serde_json::json!({
+                        "id": m.user.id.to_string(),
+                        "username": m.user.name,
+                        "discriminator": m.user.discriminator,
+                        "avatar": m.user.avatar.clone()
+                    });
+                    
+                    let roles = m.roles.iter().map(|r| r.to_string()).collect::<Vec<String>>();
+                    
+                    serde_json::json!({
+                        "user": user,
+                        "nick": m.nick,
+                        "roles": roles,
+                        "joined_at": m.joined_at.map(|dt| dt.to_rfc3339())
+                    })
+                }).collect();
+                
+                // Store the members in the database
+                match database.store_guild_members(guild_id.get() as i64, &members_json).await {
+                    Ok(count) => {
+                        tracing::info!("Successfully stored {} members for guild {}", count, guild_id);
+                    },
+                    Err(e) => {
+                        tracing::error!("Failed to store members for guild {}: {}", guild_id, e);
+                    }
+                }
+            },
+            Err(e) => {
+                tracing::error!("Failed to fetch members for guild {}: {}", guild_id, e);
+            }
+        }
+    });
 
     Ok(())
 }
