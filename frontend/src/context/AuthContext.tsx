@@ -32,13 +32,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Load authentication state from localStorage on initial render
+  // Function to get the auth token from cookies
+  const getTokenFromCookie = (): string | null => {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+      // Find the auth_token cookie
+      if (cookie.startsWith('auth_token=')) {
+        return cookie.substring('auth_token='.length);
+      }
+    }
+    return null;
+  };
+
+  // Load authentication state from localStorage or cookies on initial render
   useEffect(() => {
     const loadAuth = async () => {
       try {
-        const storedToken = localStorage.getItem('auth_token');
+        // Try localStorage first
+        let storedToken = localStorage.getItem('auth_token');
+        
+        // If not in localStorage, try cookies
+        if (!storedToken) {
+          console.log('Token not found in localStorage, checking cookies...');
+          storedToken = getTokenFromCookie();
+          if (storedToken) {
+            console.log('Found token in cookies');
+            // If found in cookies, also save to localStorage for consistency
+            localStorage.setItem('auth_token', storedToken);
+          }
+        }
+        
         if (storedToken) {
           try {
+            console.log('Processing token:', storedToken.substring(0, 10) + '...');
             // Decode JWT to get user info
             const payload = JSON.parse(atob(storedToken.split('.')[1]));
             if (payload.exp * 1000 > Date.now()) {
@@ -48,10 +75,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               // Set token in API headers
               if (api.defaults.headers) {
                 api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+                console.log('Authorization header set with token from cookie/localStorage');
               }
             } else {
               // Token expired
+              console.log('Token expired, removing from storage');
               localStorage.removeItem('auth_token');
+              document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
             }
           } catch (e) {
             console.error('Error parsing token', e);

@@ -75,17 +75,26 @@ async fn oauth_callback(
         Ok(auth_response) => {
             debug!("Successfully authenticated user: {}", auth_response.user.username);
             
-            // Set JWT token as a cookie
-            let mut cookie = Cookie::new("token", auth_response.token.clone());
-            cookie.set_path("/");
-            cookie.set_http_only(true);
+            // Set JWT token as http-only cookie for security
+            let mut secure_cookie = Cookie::new("token", auth_response.token.clone());
+            secure_cookie.set_path("/");
+            secure_cookie.set_http_only(true);
+            secure_cookie.set_same_site(actix_web::cookie::SameSite::Strict);
+            
+            // Also set a non-http-only cookie for frontend JS access
+            let mut js_cookie = Cookie::new("auth_token", auth_response.token.clone());
+            js_cookie.set_path("/");
+            js_cookie.set_http_only(false);
+            js_cookie.set_same_site(actix_web::cookie::SameSite::Strict);
+            js_cookie.set_max_age(actix_web::cookie::time::Duration::hours(24));
             
             // Encode token for URL parameter
             let token_param = auth_response.token.clone();
             
             // Redirect to frontend callback handler with token
             HttpResponse::Found()
-                .cookie(cookie)
+                .cookie(secure_cookie)
+                .cookie(js_cookie)
                 .append_header(("Location", format!("/auth-callback?token={}", token_param)))
                 .finish()
         }

@@ -60,6 +60,9 @@ const AuthCallback: React.FC = () => {
         
         // If we have a token directly in the URL, use it
         if (token) {
+          console.log('Found token in URL parameters, storing in both localStorage and cookie');
+          // Also store as cookie for server-side use
+          document.cookie = `auth_token=${token}; path=/; max-age=86400; SameSite=Strict`;
           handleAuthCallback(token);
           navigate('/', { replace: true });
           return;
