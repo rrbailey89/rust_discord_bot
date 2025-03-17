@@ -14,7 +14,7 @@ FROM rust:1.78 as rust-builder
 WORKDIR /usr/src/app
 COPY . .
 # Copy the built frontend files to the static directory
-COPY --from=frontend-builder /usr/src/frontend/dist /usr/src/app/static
+COPY --from=frontend-builder /usr/src/static /usr/src/app/static
 RUN cargo build --release
 
 # Runtime stage
