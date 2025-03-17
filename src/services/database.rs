@@ -1139,7 +1139,7 @@ impl DatabaseService {
                             nickname = EXCLUDED.nickname,
                             roles = EXCLUDED.roles,
                             joined_at = EXCLUDED.joined_at",
-                        &[&guild_id, &user_id_i64, &nickname, &roles, &joined_at],
+                        &[&guild_id, &user_id_i64, &nickname, &serde_json::to_string(&roles).unwrap_or_default(), &joined_at],
                     ).await {
                         Ok(_) => {
                             stored_count += 1;
