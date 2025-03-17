@@ -1131,7 +1131,6 @@ impl DatabaseService {
                     let joined_at = member.get("joined_at").and_then(|j| j.as_str()).unwrap_or_default();
                     
                     // Convert JSON roles to string
-                    let roles_json = serde_json::to_string(&roles).unwrap_or_default();
                     
                     // Store in database
                     match client.execute(
@@ -1142,7 +1141,7 @@ impl DatabaseService {
                             nickname = EXCLUDED.nickname,
                             roles = EXCLUDED.roles,
                             joined_at = EXCLUDED.joined_at",
-                        &[&guild_id, &user_id_i64, &nickname.unwrap_or_default(), &roles_json, &joined_at],
+                    &[&guild_id, &user_id_i64, &nickname.unwrap_or_default(), &roles, &joined_at],
                     ).await {
                         Ok(_) => {
                             stored_count += 1;
