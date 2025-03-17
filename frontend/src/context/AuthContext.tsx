@@ -149,14 +149,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Log current cookies
       console.log('Current cookies before logout:', document.cookie);
       
-      // Call server-side logout endpoint
+      // Call server-side logout endpoint with some retry logic
       console.log('Calling server-side logout endpoint');
+      let logoutSuccess = false;
+      
       try {
         const response = await api.post('/api/auth/logout');
         console.log('Logout API response:', response.status, response.data);
-      } catch (e) {
-        // If server-side logout fails, we still want to clear client-side data
-        console.error('Logout API error:', e);
+        logoutSuccess = true;
+      } catch (apiError) {
+        console.error('Logout API error:', apiError);
+        
+        // Try a second approach - direct fetch with credentials
+        try {
+          console.log('Trying direct fetch for logout');
+          const fetchResponse = await fetch('/api/auth/logout', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          
+          if (fetchResponse.ok) {
+            console.log('Direct fetch logout succeeded:', fetchResponse.status);
+            logoutSuccess = true;
+          } else {
+            console.error('Direct fetch logout failed:', fetchResponse.status);
+          }
+        } catch (fetchError) {
+          console.error('Direct fetch logout error:', fetchError);
+        }
       }
     } catch (e) {
       console.error('Logout error:', e);

@@ -104,17 +104,17 @@ const Header: React.FC = () => {
             {/* These links will work from guild management page context */}
             <NavLink to={window.location.pathname.includes('/guilds/') 
               ? `${window.location.pathname.split('/').slice(0, 3).join('/')}/commands` 
-              : "/"}>
+              : "/commands"}>
               Commands
             </NavLink>
             <NavLink to={window.location.pathname.includes('/guilds/') 
               ? `${window.location.pathname.split('/').slice(0, 3).join('/')}/word-detection` 
-              : "/"}>
+              : "/word-detection"}>
               Word Detection
             </NavLink>
             <NavLink to={window.location.pathname.includes('/guilds/') 
               ? `${window.location.pathname.split('/').slice(0, 3).join('/')}/settings` 
-              : "/"}>
+              : "/settings"}>
               Settings
             </NavLink>
             <NavLink to="/analytics">Analytics</NavLink>
