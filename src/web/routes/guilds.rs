@@ -1,30 +1,20 @@
 // src/web/routes/guilds.rs
 //! Guild management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest};
-use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode};
+use serde::Serialize;
+use tracing::{error, info, debug};
 
+use crate::error::Error;
 use crate::web::state::WebAppState;
 use crate::web::middleware::auth::Claims;
-
-/// Guild details response
-#[derive(Serialize)]
-pub struct GuildResponse {
-    id: String,
-    name: String,
-    icon: Option<String>,
-    owner: bool,
-    permissions: u64,
-}
-
-/// Guild settings request
-#[derive(Deserialize)]
-pub struct GuildSettingsRequest {
-    emoji_reactions_enabled: Option<bool>,
-    level_up_channel_id: Option<String>,
-    warn_channel_id: Option<String>,
-}
+use crate::web::models::guild::{
+    GuildInfo, GuildDetails, ChannelInfo, GuildSettings, 
+    UpdateGuildSettingsRequest, GuildResponse
+};
+use crate::web::services::AuthService;
+use crate::web::services::DiscordService;
+use crate::web::services::GuildService;
 
 /// Configure guild routes
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -38,99 +28,320 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 }
 
 /// List guilds the user has access to
+/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn list_guilds(
     req: HttpRequest,
     state: web::Data<WebAppState>
 ) -> impl Responder {
-    // TODO: Implement guild listing
-    // This is a placeholder implementation
+    // For now, use a default user ID for testing
+    let user_id = 123456789i64;
     
-    HttpResponse::Ok().json(serde_json::json!([
-        {
-            "id": "123456789012345678",
-            "name": "Example Server 1",
-            "icon": "https://cdn.discordapp.com/icons/123456789012345678/abcdef.png",
-            "owner": true,
-            "permissions": 8
-        },
-        {
-            "id": "876543210987654321",
-            "name": "Example Server 2",
-            "icon": null,
-            "owner": false,
-            "permissions": 0
+    // Get user session with Discord token
+    let auth_service = AuthService::new(
+        state.database().clone(),
+        state.config().web.clone().into(),
+    );
+    
+    let session = match auth_service.get_user_session(user_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "No active session found"
+        })),
+        Err(e) => {
+            error!("Database error: {}", e);
+            return HttpResponse::InternalServerError().finish();
         }
-    ]))
+    };
+    
+    // Call Discord API to get guilds
+    let discord_service = DiscordService::new(session.discord_token.unwrap_or_default());
+    let guild_service = GuildService::new(state.database().clone());
+    
+    match discord_service.get_current_user_guilds().await {
+        Ok(discord_guilds) => {
+            // Convert Discord guilds to our API format
+            let mut guild_infos = Vec::new();
+            
+            for discord_guild in discord_guilds {
+                // Parse the guild ID to check if the bot is in this guild
+                let guild_id = match discord_guild.id.parse::<i64>() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        error!("Invalid guild ID format: {}", discord_guild.id);
+                        continue;
+                    }
+                };
+                
+                // Check if the bot is in this guild
+                let bot_joined = match guild_service.is_bot_in_guild(guild_id).await {
+                    Ok(result) => result,
+                    Err(e) => {
+                        error!("Error checking if bot is in guild {}: {}", guild_id, e);
+                        false
+                    }
+                };
+                
+                // Parse permissions to u64
+                let permissions = u64::from_str_radix(&discord_guild.permissions, 10)
+                    .unwrap_or_default();
+                
+                // Build icon URL if available
+                let icon_url = discord_guild.icon.as_ref().map(|icon| {
+                    format!(
+                        "https://cdn.discordapp.com/icons/{}/{}.png",
+                        discord_guild.id, icon
+                    )
+                });
+                
+                guild_infos.push(GuildInfo {
+                    id: discord_guild.id.clone(),
+                    name: discord_guild.name.clone(),
+                    icon_url,
+                    owner: discord_guild.owner.unwrap_or(false),
+                    permissions,
+                    bot_joined,
+                });
+            }
+            
+            HttpResponse::Ok().json(guild_infos)
+        },
+        Err(e) => {
+            error!("Discord API error: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to retrieve guilds"
+            }))
+        }
+    }
 }
 
 /// Get details for a specific guild
+/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn get_guild(
     req: HttpRequest,
     path: web::Path<String>,
     state: web::Data<WebAppState>
 ) -> impl Responder {
-    // TODO: Implement guild details retrieval
-    // This is a placeholder implementation
+    // For now, use a default user ID for testing
+    let user_id = 123456789i64;
     
     let guild_id = path.into_inner();
     info!("Retrieving details for guild: {}", guild_id);
     
-    HttpResponse::Ok().json(serde_json::json!({
-        "id": guild_id,
-        "name": "Example Server",
-        "icon": "https://cdn.discordapp.com/icons/123456789012345678/abcdef.png",
-        "owner": true,
-        "permissions": 8,
-        "member_count": 42,
-        "channels": [
-            {
-                "id": "111222333444555666",
-                "name": "general",
-                "type": "text"
-            },
-            {
-                "id": "777888999000111222",
-                "name": "voice-chat",
-                "type": "voice"
-            }
-        ]
-    }))
+    // Check if the guild ID is valid
+    let guild_id_i64 = match guild_id.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Invalid guild ID format: {}", guild_id);
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Invalid guild ID format"
+            }));
+        }
+    };
+    
+    // Get user session with Discord token
+    let auth_service = AuthService::new(
+        state.database().clone(),
+        state.config().web.clone().into(),
+    );
+    
+    let session = match auth_service.get_user_session(user_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "No active session found"
+        })),
+        Err(e) => {
+            error!("Database error: {}", e);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    
+    // Call Discord API to get guild and channels
+    let discord_service = DiscordService::new(session.discord_token.unwrap_or_default());
+    let guild_service = GuildService::new(state.database().clone());
+    
+    // Check if the bot is in this guild
+    let bot_joined = match guild_service.is_bot_in_guild(guild_id_i64).await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Error checking if bot is in guild {}: {}", guild_id, e);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    
+    if !bot_joined {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "Bot is not in this guild"
+        }));
+    }
+    
+    // Get guild details from Discord API
+    let guild_result = discord_service.get_guild(&guild_id).await;
+    let channels_result = discord_service.get_guild_channels(&guild_id).await;
+    
+    match (guild_result, channels_result) {
+        (Ok(guild), Ok(channels)) => {
+            // Parse permissions to u64
+            let permissions = u64::from_str_radix(&guild.permissions, 10)
+                .unwrap_or_default();
+            
+            // Build icon URL if available
+            let icon_url = guild.icon.as_ref().map(|icon| {
+                format!(
+                    "https://cdn.discordapp.com/icons/{}/{}.png",
+                    guild.id, icon
+                )
+            });
+            
+            // Convert channels to our API format
+            let channel_infos: Vec<ChannelInfo> = channels.into_iter()
+                .filter_map(|channel| {
+                    // Only include channels that have a name
+                    channel.name.as_ref().map(|name| {
+                        ChannelInfo {
+                            id: channel.id,
+                            name: name.clone(),
+                            channel_type: channel.channel_type,
+                            position: channel.position.unwrap_or(0),
+                            topic: channel.topic,
+                        }
+                    })
+                })
+                .collect();
+            
+            // Build the guild details response
+            let guild_details = GuildDetails {
+                id: guild.id,
+                name: guild.name,
+                icon_url,
+                owner: guild.owner.unwrap_or(false),
+                permissions,
+                member_count: None, // We don't have this information yet
+                channels: channel_infos,
+            };
+            
+            HttpResponse::Ok().json(guild_details)
+        },
+        (Err(e), _) | (_, Err(e)) => {
+            error!("Discord API error: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to retrieve guild details"
+            }))
+        }
+    }
 }
 
 /// Get settings for a specific guild
+/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn get_guild_settings(
     req: HttpRequest,
     path: web::Path<String>,
     state: web::Data<WebAppState>
 ) -> impl Responder {
-    // TODO: Implement guild settings retrieval
-    // This is a placeholder implementation
-    
     let guild_id = path.into_inner();
     info!("Retrieving settings for guild: {}", guild_id);
     
-    HttpResponse::Ok().json(serde_json::json!({
-        "emoji_reactions_enabled": true,
-        "level_up_channel_id": "111222333444555666",
-        "warn_channel_id": "777888999000111222"
-    }))
+    // Check if the guild ID is valid
+    let guild_id_i64 = match guild_id.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Invalid guild ID format: {}", guild_id);
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Invalid guild ID format"
+            }));
+        }
+    };
+    
+    // Create guild service
+    let guild_service = GuildService::new(state.database().clone());
+    
+    // Check if the bot is in this guild
+    let bot_joined = match guild_service.is_bot_in_guild(guild_id_i64).await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Error checking if bot is in guild {}: {}", guild_id, e);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    
+    if !bot_joined {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "Bot is not in this guild"
+        }));
+    }
+    
+    // Get settings from database
+    match guild_service.get_guild_settings(guild_id_i64).await {
+        Ok(settings) => {
+            HttpResponse::Ok().json(settings)
+        },
+        Err(e) => {
+            error!("Database error: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Failed to retrieve guild settings"
+            }))
+        }
+    }
 }
 
 /// Update settings for a specific guild
+/// This is a temporary placeholder implementation until we fix the authentication middleware
 async fn update_guild_settings(
     req: HttpRequest,
     path: web::Path<String>,
-    settings: web::Json<GuildSettingsRequest>,
+    settings: web::Json<UpdateGuildSettingsRequest>,
     state: web::Data<WebAppState>
 ) -> impl Responder {
-    // TODO: Implement guild settings update
-    // This is a placeholder implementation
-    
     let guild_id = path.into_inner();
     info!("Updating settings for guild: {}", guild_id);
     
-    HttpResponse::Ok().json(serde_json::json!({
-        "success": true,
-        "message": "Guild settings updated successfully"
-    }))
+    // Check if the guild ID is valid
+    let guild_id_i64 = match guild_id.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Invalid guild ID format: {}", guild_id);
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "Invalid guild ID format"
+            }));
+        }
+    };
+    
+    // Create guild service
+    let guild_service = GuildService::new(state.database().clone());
+    
+    // Check if the bot is in this guild
+    let bot_joined = match guild_service.is_bot_in_guild(guild_id_i64).await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Error checking if bot is in guild {}: {}", guild_id, e);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    
+    if !bot_joined {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "Bot is not in this guild"
+        }));
+    }
+    
+    // Update settings in database
+    match guild_service.update_guild_settings(guild_id_i64, &settings).await {
+        Ok(_) => {
+            let response = GuildResponse {
+                success: true,
+                message: "Guild settings updated successfully".to_string(),
+            };
+            
+            HttpResponse::Ok().json(response)
+        },
+        Err(e) => {
+            error!("Database error: {}", e);
+            
+            let response = GuildResponse {
+                success: false,
+                message: format!("Failed to update guild settings: {}", e),
+            };
+            
+            HttpResponse::InternalServerError().json(response)
+        }
+    }
 }

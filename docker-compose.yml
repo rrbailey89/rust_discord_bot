@@ -11,10 +11,22 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
-    ports:
-      - "3000:3000"  # Expose web frontend port
     networks:
       - saltbox  # Connect to the existing saltbox network
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "com.github.saltbox.saltbox_managed=true"
+      
+      # HTTP Router configuration - read domain from environment variable
+      - "traefik.http.routers.discord-bot.rule=Host(`${TRAEFIK_DOMAIN:-blameserena.rayplex.life}`)"
+      - "traefik.http.routers.discord-bot.entrypoints=websecure"
+      
+      # Service configuration - tells Traefik which port your app is running on
+      - "traefik.http.services.discord-bot.loadbalancer.server.port=3000"
+      
+      # Enable TLS - Traefik will handle certificate acquisition automatically
+      - "traefik.http.routers.discord-bot.tls=true"
     logging:
       driver: "json-file"
       options:

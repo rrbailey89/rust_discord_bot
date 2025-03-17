@@ -3,11 +3,13 @@
 
 use crate::Data;
 use crate::web::state::WebAppState;
+use crate::web::routes;
+use crate::web::middleware::{JwtAuth, RequestLogger};
 use actix_cors::Cors;
 use actix_files::Files;
 use actix_web::{
     web::{self, Data as WebData},
-    App, HttpResponse, HttpServer, Responder,
+    App, HttpResponse, HttpServer, Responder, middleware::Logger,
 };
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -45,6 +47,9 @@ pub async fn start_server(bot_data: Arc<Data>, port: u16) -> Result<(), crate::e
         }
     };
     
+    // Get JWT secret from configuration
+    let jwt_secret = app_state.config().web.jwt_secret.clone();
+    
     // Start HTTP server
     HttpServer::new(move || {
         // Configure CORS
@@ -55,14 +60,38 @@ pub async fn start_server(bot_data: Arc<Data>, port: u16) -> Result<(), crate::e
             .max_age(3600);
         
         App::new()
+            // Global middleware
             .wrap(cors)
+            .wrap(Logger::default())
+            .wrap(RequestLogger)
+            
+            // Application state
             .app_data(WebData::new(app_state.clone()))
-            // API routes
+            
+            // API routes - health and version endpoints
             .service(
                 web::scope("/api")
                     .route("/health", web::get().to(health_check))
                     .route("/version", web::get().to(version))
+                    
+                    // Authentication routes (no JWT auth required)
+                    .service(
+                        web::scope("/auth")
+                            .configure(routes::auth::configure)
+                    )
+                    
+                    // Protected routes (require JWT auth)
+                    .service(
+                        web::scope("")
+                            .wrap(JwtAuth::new(jwt_secret.clone()))
+                            .configure(routes::guilds::configure)
+                            .configure(routes::commands::configure)
+                            .configure(routes::word_detection::configure)
+                            .configure(routes::settings::configure)
+                            .configure(routes::analytics::configure)
+                    )
             )
+            
             // Static files - will be replaced with actual frontend files later
             .service(Files::new("/", "./static").index_file("index.html"))
     })

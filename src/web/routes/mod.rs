@@ -1,12 +1,12 @@
 // src/web/routes/mod.rs
 //! API route definitions
 
-mod auth;
-mod guilds;
-mod commands;
-mod word_detection;
-mod settings;
-mod analytics;
+pub mod auth;
+pub mod guilds;
+pub mod commands;
+pub mod word_detection;
+pub mod settings;
+pub mod analytics;
 
 use actix_web::web;
 use actix_web::web::ServiceConfig;

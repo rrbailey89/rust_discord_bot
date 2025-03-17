@@ -54,7 +54,7 @@ impl RateLimiter {
 
 impl<S, B> Transform<S, ServiceRequest> for RateLimiter
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static + Clone,
     S::Future: 'static,
     B: 'static,
 {
@@ -82,7 +82,7 @@ pub struct RateLimiterMiddleware<S> {
 
 impl<S, B> Service<ServiceRequest> for RateLimiterMiddleware<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static + Clone,
     S::Future: 'static,
     B: 'static,
 {
@@ -158,17 +158,10 @@ where
         
         // Check if rate limit exceeded
         if too_many_requests {
-            return Box::pin(async move {
-                // Create response for rate limit exceeded
-                let mut resp = ErrorTooManyRequests("Rate limit exceeded").into();
-                
-                // Add rate limit headers to response
-                for (name, value) in rate_limit_headers {
-                    resp.headers_mut().insert(name, value);
-                }
-                
-                Ok(req.into_response(resp))
-            });
+            // Return an error directly instead of trying to convert to a ServiceResponse
+            return Box::pin(futures_util::future::err(
+                ErrorTooManyRequests("Rate limit exceeded")
+            ));
         }
         
         // Process the request

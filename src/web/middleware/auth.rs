@@ -2,28 +2,41 @@
 //! JWT authentication middleware for Actix Web
 
 use std::future::{ready, Ready};
+use std::fmt;
 use std::pin::Pin;
 use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
-    Error, HttpMessage, HttpResponse,
+    http::header, Error, HttpMessage, HttpResponse,
 };
+use actix_web::error::{ErrorUnauthorized, ResponseError};
 use futures_util::Future;
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use std::task::{Context, Poll};
+use std::rc::Rc;
 use tracing::error;
 
-/// JWT Claims structure
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Claims {
-    /// Subject (typically user ID)
-    pub sub: String,
-    /// Expiration time (as Unix timestamp)
-    pub exp: usize,
-    /// Issued at (as Unix timestamp)
-    pub iat: usize,
-    /// Optional user roles
-    pub roles: Option<Vec<String>>,
+use crate::web::models::auth::TokenClaims;
+
+/// Claims type from models (re-export for compatibility)
+pub type Claims = TokenClaims;
+
+/// Custom error type for auth middleware
+#[derive(Debug)]
+struct AuthError(String);
+
+impl fmt::Display for AuthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Authentication error: {}", self.0)
+    }
+}
+
+impl ResponseError for AuthError {
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": self.0,
+        }))
+    }
 }
 
 /// JWT Authentication middleware
@@ -55,7 +68,7 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(JwtAuthMiddleware {
-            service,
+            service: Rc::new(service),
             secret: self.secret.clone(),
         }))
     }
@@ -63,7 +76,7 @@ where
 
 /// JWT Authentication middleware implementation
 pub struct JwtAuthMiddleware<S> {
-    service: S,
+    service: Rc<S>,
     secret: String,
 }
 
@@ -83,47 +96,29 @@ where
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         // Check if token is in the Authorization header
-        let auth_header = req.headers().get("Authorization");
+        let auth_header = req.headers().get(header::AUTHORIZATION);
         
         if auth_header.is_none() {
-            return Box::pin(async {
-                Ok(req.into_response(
-                    HttpResponse::Unauthorized()
-                        .json(serde_json::json!({
-                            "error": "No authorization header provided"
-                        }))
-                        .into_body(),
-                ))
-            });
+            return Box::pin(futures_util::future::err(
+                ErrorUnauthorized("No authorization header provided")
+            ));
         }
         
         let auth_value = auth_header.unwrap().to_str();
         
         if auth_value.is_err() {
-            return Box::pin(async {
-                Ok(req.into_response(
-                    HttpResponse::Unauthorized()
-                        .json(serde_json::json!({
-                            "error": "Invalid authorization header format"
-                        }))
-                        .into_body(),
-                ))
-            });
+            return Box::pin(futures_util::future::err(
+                ErrorUnauthorized("Invalid authorization header format")
+            ));
         }
         
         let auth_string = auth_value.unwrap();
         
         // Check if it's a bearer token
         if !auth_string.starts_with("Bearer ") {
-            return Box::pin(async {
-                Ok(req.into_response(
-                    HttpResponse::Unauthorized()
-                        .json(serde_json::json!({
-                            "error": "Invalid authorization scheme, expected Bearer"
-                        }))
-                        .into_body(),
-                ))
-            });
+            return Box::pin(futures_util::future::err(
+                ErrorUnauthorized("Invalid authorization scheme, expected Bearer")
+            ));
         }
         
         // Extract the token
@@ -138,23 +133,16 @@ where
                 // Store claims in request extensions for handlers to access
                 req.extensions_mut().insert(token_data.claims);
                 
-                let fut = self.service.call(req);
+                let service = Rc::clone(&self.service);
                 Box::pin(async move {
-                    fut.await
+                    service.call(req).await
                 })
             }
             Err(e) => {
                 error!("JWT validation error: {}", e);
-                Box::pin(async {
-                    Ok(req.into_response(
-                        HttpResponse::Unauthorized()
-                            .json(serde_json::json!({
-                                "error": "Invalid token",
-                                "details": e.to_string()
-                            }))
-                            .into_body(),
-                    ))
-                })
+                Box::pin(futures_util::future::err(
+                    ErrorUnauthorized(format!("Invalid token: {}", e))
+                ))
             }
         }
     }

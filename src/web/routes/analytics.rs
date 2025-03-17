@@ -1,233 +1,170 @@
 // src/web/routes/analytics.rs
-//! Analytics and metrics routes
+//! Analytics management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest};
-use serde::{Deserialize, Serialize};
-use tracing::{error, info};
-use chrono::{DateTime, Utc};
+use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode};
+use serde::Serialize;
+use tracing::{error, info, debug};
 
+use crate::error::Error;
 use crate::web::state::WebAppState;
 use crate::web::middleware::auth::Claims;
-
-/// Event type for analytics
-#[derive(Serialize, Deserialize)]
-pub enum EventType {
-    CommandExecution,
-    ApiRequest,
-    GuildJoin,
-    GuildLeave,
-    UserActivity,
-    Error,
-}
-
-/// Analytics event
-#[derive(Serialize, Deserialize)]
-pub struct AnalyticsEvent {
-    id: Option<i32>,
-    event_type: String,
-    user_id: Option<String>,
-    guild_id: Option<String>,
-    event_data: Option<serde_json::Value>,
-    timestamp: Option<DateTime<Utc>>,
-}
-
-/// Analytics time range request
-#[derive(Deserialize)]
-pub struct TimeRangeRequest {
-    start_time: Option<DateTime<Utc>>,
-    end_time: Option<DateTime<Utc>>,
-    guild_id: Option<String>,
-}
-
-/// Client event tracking request
-#[derive(Deserialize)]
-pub struct ClientEventRequest {
-    event_type: String,
-    guild_id: Option<String>,
-    event_data: Option<serde_json::Value>,
-}
+use crate::web::models::analytics::{
+    LogEventRequest, AnalyticsQueryParams, AnalyticsResponse
+};
+use crate::web::services::AnalyticsService;
+use crate::web::services::GuildService;
 
 /// Configure analytics routes
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/analytics")
+            .route("/events", web::post().to(log_event))
             .route("/events", web::get().to(get_events))
-            .route("/events", web::post().to(track_event))
-            .route("/metrics/commands", web::get().to(get_command_metrics))
-            .route("/metrics/guilds", web::get().to(get_guild_metrics))
-            .route("/metrics/usage", web::get().to(get_usage_metrics))
-            .route("/metrics/errors", web::get().to(get_error_metrics))
+            .route("/guild/{guild_id}", web::get().to(get_guild_summary))
+            .route("/user/{user_id}", web::get().to(get_user_summary))
     );
 }
 
-/// Get analytics events
+/// Log a new analytics event
+async fn log_event(
+    req: HttpRequest,
+    event_request: web::Json<LogEventRequest>,
+    state: web::Data<WebAppState>,
+) -> impl Responder {
+    info!("Logging analytics event: {}", event_request.event_type);
+    
+    // Create analytics service
+    let analytics_service = AnalyticsService::new(state.database().clone());
+    
+    // Log the event
+    match analytics_service.log_event(&event_request).await {
+        Ok(event_id) => {
+            let response = AnalyticsResponse {
+                success: true,
+                message: "Analytics event logged successfully".to_string(),
+                event_id: Some(event_id),
+            };
+            
+            HttpResponse::Created().json(response)
+        },
+        Err(e) => {
+            error!("Error logging analytics event: {}", e);
+            
+            let response = AnalyticsResponse {
+                success: false,
+                message: format!("Failed to log analytics event: {}", e),
+                event_id: None,
+            };
+            
+            HttpResponse::InternalServerError().json(response)
+        }
+    }
+}
+
+/// Get analytics events matching query parameters
 async fn get_events(
     req: HttpRequest,
-    query: web::Query<TimeRangeRequest>,
-    state: web::Data<WebAppState>
+    query: web::Query<AnalyticsQueryParams>,
+    state: web::Data<WebAppState>,
 ) -> impl Responder {
-    // TODO: Implement analytics events retrieval
-    // This is a placeholder implementation
-    
     info!("Retrieving analytics events");
     
-    HttpResponse::Ok().json(serde_json::json!([
-        {
-            "id": 1,
-            "event_type": "CommandExecution",
-            "user_id": "111222333444555666",
-            "guild_id": "123456789012345678",
-            "event_data": {
-                "command": "ping",
-                "execution_time_ms": 15
-            },
-            "timestamp": "2025-03-16T10:15:00Z"
+    // Only admins should be able to query analytics events
+    // For now, we'll skip admin check during development
+    
+    // Create analytics service
+    let analytics_service = AnalyticsService::new(state.database().clone());
+    
+    // Get events
+    match analytics_service.get_events(&query).await {
+        Ok(events) => {
+            HttpResponse::Ok().json(events)
         },
-        {
-            "id": 2,
-            "event_type": "ApiRequest",
-            "user_id": "111222333444555666",
-            "guild_id": null,
-            "event_data": {
-                "endpoint": "/api/guilds",
-                "method": "GET",
-                "status_code": 200
-            },
-            "timestamp": "2025-03-16T10:16:30Z"
+        Err(e) => {
+            error!("Error getting analytics events: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Failed to retrieve analytics events: {}", e)
+            }))
         }
-    ]))
+    }
 }
 
-/// Track a client-side event
-async fn track_event(
+/// Get guild analytics summary
+async fn get_guild_summary(
     req: HttpRequest,
-    event: web::Json<ClientEventRequest>,
-    state: web::Data<WebAppState>
+    path: web::Path<i64>,
+    query: web::Query<PeriodQuery>,
+    state: web::Data<WebAppState>,
 ) -> impl Responder {
-    // TODO: Implement event tracking
-    // This is a placeholder implementation
+    let guild_id = path.into_inner();
+    let period = query.period.as_deref().unwrap_or("week");
     
-    info!("Tracking client event: {}", event.event_type);
+    info!("Retrieving analytics summary for guild: {} (period: {})", guild_id, period);
     
-    HttpResponse::Created().json(serde_json::json!({
-        "success": true,
-        "message": "Event tracked successfully"
-    }))
-}
-
-/// Get command execution metrics
-async fn get_command_metrics(
-    req: HttpRequest,
-    query: web::Query<TimeRangeRequest>,
-    state: web::Data<WebAppState>
-) -> impl Responder {
-    // TODO: Implement command metrics retrieval
-    // This is a placeholder implementation
+    // Create services
+    let analytics_service = AnalyticsService::new(state.database().clone());
+    let guild_service = GuildService::new(state.database().clone());
     
-    info!("Retrieving command metrics");
-    
-    HttpResponse::Ok().json(serde_json::json!({
-        "total_commands": 1250,
-        "commands_by_type": {
-            "ping": 356,
-            "warn": 124,
-            "help": 298,
-            "userinfo": 215,
-            "other": 257
-        },
-        "avg_execution_time_ms": 45,
-        "success_rate": 0.98
-    }))
-}
-
-/// Get guild metrics
-async fn get_guild_metrics(
-    req: HttpRequest,
-    query: web::Query<TimeRangeRequest>,
-    state: web::Data<WebAppState>
-) -> impl Responder {
-    // TODO: Implement guild metrics retrieval
-    // This is a placeholder implementation
-    
-    info!("Retrieving guild metrics");
-    
-    HttpResponse::Ok().json(serde_json::json!({
-        "total_guilds": 42,
-        "new_guilds": 5,
-        "active_guilds": 38,
-        "guilds_by_size": {
-            "small": 15,
-            "medium": 20,
-            "large": 7
-        },
-        "commands_per_guild": {
-            "avg": 29.8,
-            "min": 1,
-            "max": 312
+    // Check if bot is in this guild
+    let bot_joined = match guild_service.is_bot_in_guild(guild_id).await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Error checking if bot is in guild {}: {}", guild_id, e);
+            return HttpResponse::InternalServerError().finish();
         }
-    }))
-}
-
-/// Get usage metrics
-async fn get_usage_metrics(
-    req: HttpRequest,
-    query: web::Query<TimeRangeRequest>,
-    state: web::Data<WebAppState>
-) -> impl Responder {
-    // TODO: Implement usage metrics retrieval
-    // This is a placeholder implementation
+    };
     
-    info!("Retrieving usage metrics");
+    if !bot_joined {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "Bot is not in this guild"
+        }));
+    }
     
-    HttpResponse::Ok().json(serde_json::json!({
-        "api": {
-            "requests_total": 5832,
-            "requests_by_endpoint": {
-                "/api/guilds": 2104,
-                "/api/commands": 1523,
-                "/api/settings": 955,
-                "other": 1250
-            },
-            "avg_response_time_ms": 65
+    // Get guild summary
+    match analytics_service.get_guild_summary(guild_id, period).await {
+        Ok(summary) => {
+            HttpResponse::Ok().json(summary)
         },
-        "bot": {
-            "uptime_percentage": 99.98,
-            "message_count": 15032,
-            "command_count": 4321
+        Err(e) => {
+            error!("Error getting guild analytics summary: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Failed to retrieve guild analytics summary: {}", e)
+            }))
         }
-    }))
+    }
 }
 
-/// Get error metrics
-async fn get_error_metrics(
+/// Get user activity summary
+async fn get_user_summary(
     req: HttpRequest,
-    query: web::Query<TimeRangeRequest>,
-    state: web::Data<WebAppState>
+    path: web::Path<i64>,
+    query: web::Query<PeriodQuery>,
+    state: web::Data<WebAppState>,
 ) -> impl Responder {
-    // TODO: Implement error metrics retrieval
-    // This is a placeholder implementation
+    let user_id = path.into_inner();
+    let period = query.period.as_deref().unwrap_or("week");
     
-    info!("Retrieving error metrics");
+    info!("Retrieving activity summary for user: {} (period: {})", user_id, period);
     
-    HttpResponse::Ok().json(serde_json::json!({
-        "total_errors": 53,
-        "errors_by_type": {
-            "api": 12,
-            "database": 5,
-            "discord": 31,
-            "other": 5
+    // Create analytics service
+    let analytics_service = AnalyticsService::new(state.database().clone());
+    
+    // Get user summary
+    match analytics_service.get_user_summary(user_id, period).await {
+        Ok(summary) => {
+            HttpResponse::Ok().json(summary)
         },
-        "most_common_errors": [
-            {
-                "type": "discord_rate_limit",
-                "count": 28,
-                "last_seen": "2025-03-16T09:45:12Z"
-            },
-            {
-                "type": "database_connection",
-                "count": 3,
-                "last_seen": "2025-03-15T22:12:43Z"
-            }
-        ]
-    }))
+        Err(e) => {
+            error!("Error getting user activity summary: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Failed to retrieve user activity summary: {}", e)
+            }))
+        }
+    }
+}
+
+/// Query parameters for period
+#[derive(serde::Deserialize)]
+struct PeriodQuery {
+    period: Option<String>,
 }
