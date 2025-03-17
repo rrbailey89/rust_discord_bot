@@ -1132,14 +1132,13 @@ impl DatabaseService {
                     
                     // Store in database
                     match client.execute(
-                        "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at, last_updated)
-                         VALUES ($1, $2, $3, $4, $5, NOW())
+                        "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
+                         VALUES ($1, $2, $3, $4, $5)
                          ON CONFLICT (guild_id, user_id)
                          DO UPDATE SET
                             nickname = EXCLUDED.nickname,
                             roles = EXCLUDED.roles,
-                            joined_at = EXCLUDED.joined_at,
-                            last_updated = NOW()",
+                            joined_at = EXCLUDED.joined_at",
                         &[&guild_id, &user_id_i64, &nickname, &roles, &joined_at],
                     ).await {
                         Ok(_) => {

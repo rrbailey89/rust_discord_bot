@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS guild_members (
     nickname TEXT,
     roles JSONB NOT NULL DEFAULT '[]'::JSONB,
     joined_at TEXT,
-    last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     PRIMARY KEY (guild_id, user_id)
 );
 
