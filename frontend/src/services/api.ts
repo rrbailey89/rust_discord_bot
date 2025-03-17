@@ -102,6 +102,12 @@ export const updateGuildSettings = async (guildId: string, settings: any) => {
   return response.data;
 };
 
+// Guilds
+export const fetchGuilds = async () => {
+  const response = await api.get('/guilds');
+  return response.data;
+};
+
 // Analytics
 export const fetchAnalyticsData = async (params: {
   guildId?: string;

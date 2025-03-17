@@ -96,7 +96,7 @@ const RetryButton = styled.button`
 
 // Function to fetch guilds from the API
 const fetchGuilds = async (): Promise<Guild[]> => {
-  const response = await api.get('/api/guilds');
+  const response = await api.get('/guilds');
   return response.data;
 };
 
