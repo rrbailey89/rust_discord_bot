@@ -202,13 +202,28 @@ const GuildManagement: React.FC = () => {
         navigate(`/guilds/${guildId}/word-detection`);
         break;
       case 'settings':
-        // Stay on the current page, just change the tab
+        navigate(`/guilds/${guildId}/settings`);
         break;
       default:
         // Overview tab - stay on the main guild page
+        navigate(`/guilds/${guildId}`);
         break;
     }
   };
+  
+  // Set active tab based on current path when component mounts or route changes
+  React.useEffect(() => {
+    const path = window.location.pathname;
+    if (path.includes('/commands')) {
+      setActiveTab('commands');
+    } else if (path.includes('/word-detection')) {
+      setActiveTab('word-detection');
+    } else if (path.includes('/settings')) {
+      setActiveTab('settings');
+    } else {
+      setActiveTab('overview');
+    }
+  }, [window.location.pathname]);
   
   // Render loading state
   if (isLoading) {

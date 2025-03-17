@@ -137,12 +137,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     window.location.href = '/api/auth/login';
   };
 
-  const logout = () => {
-    localStorage.removeItem('auth_token');
-    setToken(null);
-    setUser(null);
-    // Redirect to home page after logout
-    window.location.href = '/';
+  const logout = async () => {
+    try {
+      // Clear token in API headers if exists
+      if (api.defaults.headers) {
+        delete api.defaults.headers.common['Authorization'];
+      }
+      
+      // Call server-side logout endpoint
+      await api.post('/api/auth/logout').catch((e) => {
+        // If server-side logout fails, we still want to clear client-side data
+        console.error('Logout API error:', e);
+      });
+    } catch (e) {
+      console.error('Logout error:', e);
+    } finally {
+      // Clear client-side storage
+      localStorage.removeItem('auth_token');
+      
+      // Clear cookies - both the http-only and js-accessible versions
+      document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      
+      // Update state
+      setToken(null);
+      setUser(null);
+      
+      // Redirect to home page after logout
+      window.location.href = '/';
+    }
   };
 
   const handleAuthCallback = (newToken: string) => {

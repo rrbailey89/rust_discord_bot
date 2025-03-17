@@ -97,6 +97,12 @@ pub struct UserInfo {
     /// User's authorized guilds (server IDs)
     #[serde(default)]
     pub guilds: Vec<String>,
+    /// User email
+    pub email: Option<String>,
+    /// Whether the user's email is verified
+    pub verified: Option<bool>,
+    /// User locale
+    pub locale: Option<String>,
 }
 
 /// Authentication response sent to client

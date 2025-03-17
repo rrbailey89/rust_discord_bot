@@ -1,7 +1,7 @@
 // src/web/routes/auth.rs
 //! Authentication routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, cookie::Cookie};
+use actix_web::{web, HttpResponse, Responder, HttpRequest, cookie::Cookie, HttpMessage};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, debug};
 
@@ -32,6 +32,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/callback", web::get().to(oauth_callback))
             .route("/discord/callback", web::get().to(oauth_callback))  // Add compatibility with Discord's expected callback
             .route("/refresh", web::post().to(refresh_token))
+            .route("/logout", web::post().to(logout))
     );
 }
 
@@ -75,6 +76,14 @@ async fn oauth_callback(
         Ok(auth_response) => {
             debug!("Successfully authenticated user: {}", auth_response.user.username);
             
+            // Log additional info from expanded scopes 
+            if let Some(email) = &auth_response.user.email {
+                debug!("User email: {} (verified: {:?})", email, auth_response.user.verified);
+            }
+            if let Some(locale) = &auth_response.user.locale {
+                debug!("User locale: {}", locale);
+            }
+            
             // Set JWT token as http-only cookie for security
             let mut secure_cookie = Cookie::new("token", auth_response.token.clone());
             secure_cookie.set_path("/");
@@ -108,6 +117,37 @@ async fn oauth_callback(
                 .finish()
         }
     }
+}
+
+/// Logout the user and clear session data
+async fn logout(_req: HttpRequest, _state: web::Data<WebAppState>) -> impl Responder {
+    // Log the logout attempt
+    info!("Processing logout request");
+    
+    // Clear all auth cookies
+    let mut response = HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "message": "Logged out successfully"
+    }));
+    
+    // Clear the auth cookies
+    let mut token_cookie = Cookie::new("token", "");
+    token_cookie.set_path("/");
+    token_cookie.set_http_only(true);
+    token_cookie.set_max_age(actix_web::cookie::time::Duration::seconds(0));
+    response.add_cookie(&token_cookie).unwrap_or_else(|e| {
+        error!("Failed to add cookie to response: {}", e);
+    });
+    
+    let mut js_cookie = Cookie::new("auth_token", "");
+    js_cookie.set_path("/");
+    js_cookie.set_http_only(false);
+    js_cookie.set_max_age(actix_web::cookie::time::Duration::seconds(0));
+    response.add_cookie(&js_cookie).unwrap_or_else(|e| {
+        error!("Failed to add cookie to response: {}", e);
+    });
+    
+    response
 }
 
 /// Refresh an existing token
@@ -156,6 +196,9 @@ async fn refresh_token(
                                             username,
                                             avatar_url,
                                             guilds,
+                                            email: None,
+                                            verified: None,
+                                            locale: None,
                                         },
                                     };
                                     

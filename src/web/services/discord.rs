@@ -36,6 +36,31 @@ pub struct DiscordUser {
     pub avatar: Option<String>,
     /// User's email
     pub email: Option<String>,
+    /// Whether the user's email is verified
+    pub verified: Option<bool>,
+    /// User locale
+    pub locale: Option<String>,
+    /// Whether the user has MFA enabled
+    pub mfa_enabled: Option<bool>,
+}
+
+/// Discord Guild Member representation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscordGuildMember {
+    /// User object for this member
+    pub user: Option<DiscordUser>,
+    /// Member's nickname in the guild
+    pub nick: Option<String>,
+    /// Member's roles
+    pub roles: Vec<String>,
+    /// When the user joined the guild
+    pub joined_at: String,
+    /// Whether the member is muted
+    pub mute: bool,
+    /// Whether the member is deafened
+    pub deaf: bool,
+    /// Whether the member has passed guild membership screening
+    pub pending: Option<bool>,
 }
 
 /// Discord Channel representation
@@ -197,6 +222,43 @@ impl DiscordService {
         })?;
 
         Ok(channels)
+    }
+
+    /// Get members of a specific guild
+    pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Vec<DiscordGuildMember>, Error> {
+        let url = format!("{}/guilds/{}/members?limit={}", self.api_base, guild_id, limit);
+        debug!("Fetching guild members from Discord API: {}", url);
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.auth_headers())
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Discord API request error: {}", e);
+                Error::Unknown(format!("Discord API request error: {}", e))
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read response body".to_string());
+
+            error!("Discord API error: Status {}, Body: {}", status, text);
+            return Err(Error::Unknown(format!("Discord API error: {}", status)));
+        }
+
+        // Parse the response
+        let members: Vec<DiscordGuildMember> = response.json().await.map_err(|e| {
+            error!("Failed to parse Discord guild members response: {}", e);
+            Error::Unknown(format!("Failed to parse Discord guild members response: {}", e))
+        })?;
+
+        info!("Fetched {} members for guild {}", members.len(), guild_id);
+        Ok(members)
     }
 
     /// Get current user information

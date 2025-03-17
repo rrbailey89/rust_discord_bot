@@ -98,8 +98,11 @@ impl AuthService {
             .authorize_url(|| csrf_token.clone())
             .add_scope(oauth2::Scope::new("identify".to_string()))
             .add_scope(oauth2::Scope::new("guilds".to_string()))
+            .add_scope(oauth2::Scope::new("email".to_string()))          // Request email access
+            .add_scope(oauth2::Scope::new("guilds.members.read".to_string()))  // Request guild members access
             .url();
-            
+        
+        info!("Generated Discord OAuth URL with additional scopes (email, guilds.members.read)");
         (auth_url.to_string(), state)
     }
     
@@ -304,6 +307,9 @@ impl AuthService {
                 username: user.username.clone(),
                 avatar_url,
                 guilds,
+                email: user.email.clone(),
+                verified: user.verified,
+                locale: user.locale.clone(),
             },
         };
         
@@ -344,6 +350,9 @@ impl AuthService {
                 username: username.to_string(),
                 avatar_url,
                 guilds,
+                email: None,
+                verified: None,
+                locale: None,
             },
         };
         
@@ -419,6 +428,9 @@ impl AuthService {
                     )
                 }),
                 guilds, // Use the fetched guilds array
+                email: user.email.clone(),
+                verified: user.verified,
+                locale: user.locale.clone(),
             },
         };
         

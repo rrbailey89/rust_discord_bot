@@ -184,7 +184,7 @@ impl GuildService {
         // Query to check if the guild exists in our database
         let row = client
             .query_opt(
-                "SELECT 1 FROM guilds WHERE id = $1 LIMIT 1",
+                "SELECT 1 FROM guild_info WHERE guild_id = $1 LIMIT 1",
                 &[&guild_id],
             )
             .await?;

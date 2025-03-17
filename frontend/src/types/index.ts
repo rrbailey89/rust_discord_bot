@@ -4,6 +4,10 @@ export interface User {
   username: string;
   avatar_url?: string;
   guilds: Guild[];
+  // New fields from expanded OAuth scopes
+  email?: string;
+  verified?: boolean;
+  locale?: string;
 }
 
 // Guild related types
