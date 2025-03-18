@@ -166,6 +166,9 @@ impl DiscordService {
                 
                 // Sleep for the specified time before retrying
                 tokio::time::sleep(std::time::Duration::from_secs_f64(retry_after)).await;
+                
+                // Log that we're making a retry attempt
+                debug!("Attempting retry #{} for Discord API request", retries);
                 continue;
             } else {
                 // Other error

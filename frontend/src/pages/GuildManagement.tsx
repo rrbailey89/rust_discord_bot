@@ -169,7 +169,7 @@ const getInitial = (name: string) => name && name.length > 0 ? name.charAt(0).to
 
 // Fetch guild details
 const fetchGuildDetails = async (guildId: string): Promise<Guild> => {
-  const response = await api.get(`/api/guilds/${guildId}`);
+  const response = await api.get(`/guilds/${guildId}`);
   return response.data;
 };
 
