@@ -85,6 +85,24 @@ pub struct TokenClaims {
     pub user: UserInfo,
 }
 
+/// Guild structure for auth context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Guild {
+    /// Guild ID
+    pub id: String,
+    /// Guild name
+    pub name: String,
+    /// Guild icon hash
+    pub icon: Option<String>,
+    /// Whether the user is the owner
+    pub owner: bool,
+    /// User's permissions in the guild
+    pub permissions: u64,
+    /// Whether the bot is in this guild
+    #[serde(rename = "botJoined")]
+    pub bot_joined: bool,
+}
+
 /// User information stored in JWT token
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserInfo {

@@ -427,7 +427,7 @@ impl AuthService {
                         user.id, avatar
                     )
                 }),
-                guilds: guild_ids, // Use the fetched guild IDs
+                guilds: guild_ids, // Use the guild IDs
                 email: user.email.clone(),
                 verified: user.verified,
                 locale: user.locale.clone(),
