@@ -74,31 +74,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               throw new Error('Invalid token format (not a JWT)');
             }
             
-            // Decode JWT to get user info
-            const payload = JSON.parse(atob(tokenParts[1]));
-            
-            // Verify token expiration
-            if (!payload.exp) {
-              throw new Error('Token missing expiration');
+      // Decode JWT to get user info
+      const payload = JSON.parse(atob(tokenParts[1]));
+      
+      // Verify token expiration
+      if (!payload.exp) {
+        throw new Error('Token missing expiration');
+      }
+      
+      if (payload.exp * 1000 > Date.now()) {
+        // Verify user info structure
+        if (!payload.user || !payload.user.id || !payload.user.username) {
+          throw new Error('Token payload missing required user information');
+        }
+        
+        // Log full user info for debugging
+        console.log('User info from token:', payload.user);
+        
+        // Check if guilds array exists
+        if (!Array.isArray(payload.user.guilds)) {
+          console.warn('Token missing guilds array, defaulting to empty array');
+          payload.user.guilds = [];
+        }
+        
+        // If guilds exist but are just strings (IDs), fetch the full guild objects
+        if (payload.user.guilds.length > 0 && typeof payload.user.guilds[0] === 'string') {
+          console.log('JWT contains guild IDs, fetching full guild details from API...');
+          try {
+            // Make an API call to get user details with full guild objects
+            const userResponse = await api.get('/api/users/me');
+            if (userResponse.data && userResponse.data.guilds) {
+              console.log('Received full guild details:', userResponse.data.guilds);
+              payload.user.guilds = userResponse.data.guilds;
             }
-            
-            if (payload.exp * 1000 > Date.now()) {
-              // Verify user info structure
-              if (!payload.user || !payload.user.id || !payload.user.username) {
-                throw new Error('Token payload missing required user information');
-              }
-              
-              // Log full user info for debugging
-              console.log('User info from token:', payload.user);
-              
-              // Check if guilds array exists
-              if (!Array.isArray(payload.user.guilds)) {
-                console.warn('Token missing guilds array, defaulting to empty array');
-                payload.user.guilds = [];
-              }
-              
-              setToken(storedToken);
-              setUser(payload.user);
+          } catch (apiError) {
+            console.error('Failed to fetch user details with guild information:', apiError);
+          }
+        }
+        
+        setToken(storedToken);
+        setUser(payload.user);
               
               // Set token in API headers
               if (api.defaults.headers) {
@@ -206,7 +221,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const handleAuthCallback = (newToken: string) => {
+  const handleAuthCallback = async (newToken: string) => {
     try {
       console.log('Received token:', newToken.substring(0, 10) + '...');
       
@@ -227,17 +242,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         payload.user.guilds = [];
       }
       
+      // Add token to all future API requests
+      if (api.defaults.headers) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+      }
+      
+      // If guilds exist but are just strings (IDs), fetch the full guild objects
+      if (payload.user.guilds.length > 0 && typeof payload.user.guilds[0] === 'string') {
+        console.log('JWT contains guild IDs, fetching full guild details from API...');
+        try {
+          // Make an API call to get user details with full guild objects
+          const userResponse = await api.get('/api/users/me');
+          if (userResponse.data && userResponse.data.guilds) {
+            console.log('Received full guild details:', userResponse.data.guilds);
+            payload.user.guilds = userResponse.data.guilds;
+          }
+        } catch (apiError) {
+          console.error('Failed to fetch user details with guild information:', apiError);
+        }
+      }
+      
       // Store the token
       localStorage.setItem('auth_token', newToken);
       
       // Update state
       setToken(newToken);
       setUser(payload.user);
-      
-      // Add token to all future API requests
-      if (api.defaults.headers) {
-        api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-      }
       
       console.log('User authenticated successfully:', {
         username: payload.user?.username,

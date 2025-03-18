@@ -31,4 +31,12 @@ impl WebAppState {
     pub fn logging(&self) -> &Arc<crate::services::LoggingService> {
         &self.bot_data.logging
     }
+    
+    /// Get a new authentication service
+    pub fn auth_service(&self) -> crate::web::services::auth::AuthService {
+        crate::web::services::auth::AuthService::new(
+            self.database().clone(),
+            self.config().web.clone().into()
+        )
+    }
 }

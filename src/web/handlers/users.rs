@@ -25,6 +25,8 @@ pub struct UserProfile {
     pub verified: Option<bool>,
     /// User's locale
     pub locale: Option<String>,
+    /// User's Discord guilds (servers)
+    pub guilds: Vec<crate::web::models::auth::Guild>,
 }
 
 /// Get current user profile information
@@ -38,7 +40,57 @@ pub async fn get_current_user(
         Err(response) => return response,
     };
     
-    // Return user info from claims
+    // Get user session to get their Discord token
+    let user_id = match claims.user.id.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Failed to parse user ID to i64: {}", claims.user.id);
+            return error_response(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                "Invalid user ID format"
+            );
+        }
+    };
+    
+    // Get user's full guild information from Discord API
+    let mut guilds = Vec::new();
+    
+    let auth_service = state.auth_service();
+    
+    if let Ok(Some(session)) = auth_service.get_user_session(user_id).await {
+        if let Some(discord_token) = &session.discord_token {
+            // Fetch guilds from Discord API
+            match auth_service.fetch_discord_guilds(discord_token).await {
+                Ok(discord_guilds) => {
+                    // Convert to our Guild model
+                    guilds = discord_guilds
+                        .into_iter()
+                        .map(|g| {
+                            // Convert permissions from string to u64
+                            let permissions = u64::from_str_radix(&g.permissions, 10).unwrap_or(0);
+                            
+                            // Create Guild object with full details
+                            crate::web::models::auth::Guild {
+                                id: g.id,
+                                name: g.name,
+                                icon: g.icon,
+                                owner: g.owner.unwrap_or(false),
+                                permissions,
+                                bot_joined: false, // Will be set later if needed
+                            }
+                        })
+                        .collect();
+                        
+                    debug!("Fetched {} guilds for user {}", guilds.len(), claims.user.id);
+                }
+                Err(e) => {
+                    error!("Failed to fetch Discord guilds: {}", e);
+                }
+            }
+        }
+    }
+    
+    // Return user info from claims with the fetched guilds
     let profile = UserProfile {
         id: claims.user.id.clone(),
         username: claims.user.username.clone(),
@@ -46,6 +98,7 @@ pub async fn get_current_user(
         email: claims.user.email.clone(),
         verified: claims.user.verified,
         locale: claims.user.locale.clone(),
+        guilds,
     };
     
     success(profile)

@@ -7,6 +7,7 @@ pub mod commands;
 pub mod word_detection;
 pub mod settings;
 pub mod analytics;
+pub mod users;
 
 use actix_web::web;
 use actix_web::web::ServiceConfig;
@@ -22,5 +23,6 @@ pub fn configure(cfg: &mut ServiceConfig) {
             .configure(word_detection::configure)
             .configure(settings::configure)
             .configure(analytics::configure)
+            .configure(users::configure)
     );
 }

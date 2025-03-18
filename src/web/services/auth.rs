@@ -280,7 +280,7 @@ impl AuthService {
     }
     
     /// Generate a JWT token
-    pub fn generate_jwt(&self, user: &DiscordUser, guilds: Vec<String>) -> Result<(String, usize), Error> {
+    pub fn generate_jwt(&self, user: &DiscordUser, guild_ids: Vec<String>) -> Result<(String, usize), Error> {
         // Calculate expiration time
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -306,7 +306,7 @@ impl AuthService {
                 id: user.id.clone(),
                 username: user.username.clone(),
                 avatar_url,
-                guilds,
+                guilds: guild_ids,  // Use the guild IDs
                 email: user.email.clone(),
                 verified: user.verified,
                 locale: user.locale.clone(),
@@ -395,21 +395,36 @@ impl AuthService {
         self.store_user_session(user.id.parse::<i64>().unwrap_or_default(), &token).await?;
         
         // Fetch user's guilds from Discord API
-        let guild_ids = self.fetch_discord_guilds(&token.access_token).await
-            .map(|discord_guilds| {
-                // Extract just the guild IDs
-                discord_guilds.into_iter()
-                    .map(|g| g.id)
-                    .collect::<Vec<String>>()
-            })
+        let discord_guilds = self.fetch_discord_guilds(&token.access_token).await
             .unwrap_or_else(|e| {
                 // Log the error but continue with empty guilds
                 error!("Failed to fetch guilds for user {}: {}", user.id, e);
                 vec![]
             });
+            
+        // Create a vector of guild objects to use in the frontend
+        let guilds = discord_guilds.into_iter()
+            .map(|g| {
+                // Convert permissions from string to u64
+                let permissions = u64::from_str_radix(&g.permissions, 10).unwrap_or(0);
+                
+                // Create Guild object with full details
+                crate::web::models::auth::Guild {
+                    id: g.id.clone(),
+                    name: g.name,
+                    icon: g.icon,
+                    owner: g.owner.unwrap_or(false),
+                    permissions,
+                    bot_joined: false, // Will be set later if needed
+                }
+            })
+            .collect::<Vec<_>>();
         
         // Log how many guilds we found
-        info!("Found {} guilds for user {}", guild_ids.len(), user.id);
+        info!("Found {} guilds for user {}", guilds.len(), user.id);
+        
+        // Extract guild IDs for JWT - we store only IDs in the JWT to keep it small
+        let guild_ids = guilds.iter().map(|g| g.id.clone()).collect::<Vec<String>>();
         
         // Generate JWT
         let (jwt, expires_in) = self.generate_jwt(&user, guild_ids.clone())?;
@@ -427,7 +442,7 @@ impl AuthService {
                         user.id, avatar
                     )
                 }),
-                guilds: guild_ids, // Use the guild IDs
+                guilds: guild_ids, // Use just the guild IDs in the UserInfo
                 email: user.email.clone(),
                 verified: user.verified,
                 locale: user.locale.clone(),
