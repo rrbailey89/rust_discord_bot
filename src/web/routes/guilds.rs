@@ -113,6 +113,19 @@ async fn list_guilds(
                     )
                 });
                 
+                // Get member count if the bot is in this guild
+                let member_count = if bot_joined {
+                    match guild_service.get_guild_member_count(guild_id).await {
+                        Ok(count) => Some(count),
+                        Err(e) => {
+                            error!("Error fetching member count for guild {}: {}", guild_id, e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                
                 guild_infos.push(GuildInfo {
                     id: discord_guild.id.clone(),
                     name: discord_guild.name.clone(),
@@ -120,6 +133,7 @@ async fn list_guilds(
                     owner: discord_guild.owner.unwrap_or(false),
                     permissions,
                     bot_joined,
+                    member_count,
                 });
             }
             
@@ -244,6 +258,15 @@ async fn get_guild(
                 })
                 .collect();
             
+            // Get member count from the database
+            let member_count = match guild_service.get_guild_member_count(guild_id_i64).await {
+                Ok(count) => Some(count),
+                Err(e) => {
+                    error!("Error fetching member count for guild {}: {}", guild_id, e);
+                    None
+                }
+            };
+            
             // Build the guild details response
             let guild_details = GuildDetails {
                 id: guild.id,
@@ -251,7 +274,7 @@ async fn get_guild(
                 icon_url,
                 owner: guild.owner.unwrap_or(false),
                 permissions,
-                member_count: None, // We don't have this information yet
+                member_count,
                 channels: channel_infos,
             };
             
