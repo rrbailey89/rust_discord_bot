@@ -97,20 +97,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           payload.user.guilds = [];
         }
         
-        // If guilds exist but are just strings (IDs), fetch the full guild objects
-        if (payload.user.guilds.length > 0 && typeof payload.user.guilds[0] === 'string') {
-          console.log('JWT contains guild IDs, fetching full guild details from API...');
-          try {
-            // Make an API call to get user details with full guild objects
-            const userResponse = await api.get('/api/users/me');
-            if (userResponse.data && userResponse.data.guilds) {
-              console.log('Received full guild details:', userResponse.data.guilds);
-              payload.user.guilds = userResponse.data.guilds;
-            }
-          } catch (apiError) {
-            console.error('Failed to fetch user details with guild information:', apiError);
-          }
-        }
+                // If guilds exist but are just strings (IDs), fetch the full guild objects
+                if (payload.user.guilds.length > 0 && typeof payload.user.guilds[0] === 'string') {
+                  console.log('JWT contains guild IDs, fetching full guild details from API...');
+                  try {
+                    // Make an API call to get user details with full guild objects
+                    const userResponse = await api.get('/users/me');
+                    if (userResponse.data && userResponse.data.data && userResponse.data.data.guilds) {
+                      console.log('Received full guild details:', userResponse.data.data.guilds);
+                      payload.user.guilds = userResponse.data.data.guilds;
+                    }
+                  } catch (apiError) {
+                    console.error('Failed to fetch user details with guild information:', apiError);
+                  }
+                }
         
         setToken(storedToken);
         setUser(payload.user);
@@ -252,10 +252,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('JWT contains guild IDs, fetching full guild details from API...');
         try {
           // Make an API call to get user details with full guild objects
-          const userResponse = await api.get('/api/users/me');
-          if (userResponse.data && userResponse.data.guilds) {
-            console.log('Received full guild details:', userResponse.data.guilds);
-            payload.user.guilds = userResponse.data.guilds;
+          const userResponse = await api.get('/users/me');
+          if (userResponse.data && userResponse.data.data && userResponse.data.data.guilds) {
+            console.log('Received full guild details:', userResponse.data.data.guilds);
+            payload.user.guilds = userResponse.data.data.guilds;
           }
         } catch (apiError) {
           console.error('Failed to fetch user details with guild information:', apiError);

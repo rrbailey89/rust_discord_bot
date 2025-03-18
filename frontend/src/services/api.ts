@@ -96,6 +96,12 @@ declare module 'axios' {
 
 // API Functions
 
+// User Information
+export const fetchCurrentUser = async () => {
+  const response = await api.get('/users/me');
+  return response.data;
+};
+
 // Guild Settings
 export const fetchGuildSettings = async (guildId: string) => {
   const response = await api.get(`/guilds/${guildId}/settings`);
