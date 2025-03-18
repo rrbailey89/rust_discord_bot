@@ -116,40 +116,69 @@ impl DiscordService {
         headers
     }
 
-    /// Get current user's guilds
+    /// Get current user's guilds with rate limit handling
     pub async fn get_current_user_guilds(&self) -> Result<Vec<DiscordGuild>, Error> {
         let url = format!("{}/users/@me/guilds", self.api_base);
         debug!("Fetching guilds from Discord API: {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Discord API request error: {}", e);
-                Error::Unknown(format!("Discord API request error: {}", e))
-            })?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response
-                .text()
+        let mut retries = 0;
+        let max_retries = 3;
+        
+        loop {
+            let response = self
+                .client
+                .get(&url)
+                .headers(self.auth_headers())
+                .send()
                 .await
-                .unwrap_or_else(|_| "Could not read response body".to_string());
+                .map_err(|e| {
+                    error!("Discord API request error: {}", e);
+                    Error::Unknown(format!("Discord API request error: {}", e))
+                })?;
 
-            error!("Discord API error: Status {}, Body: {}", status, text);
-            return Err(Error::Unknown(format!("Discord API error: {}", status)));
+            if response.status().is_success() {
+                // Parse the response
+                let guilds: Vec<DiscordGuild> = response.json().await.map_err(|e| {
+                    error!("Failed to parse Discord guilds response: {}", e);
+                    Error::Unknown(format!("Failed to parse Discord guilds response: {}", e))
+                })?;
+
+                return Ok(guilds);
+            } else if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                // Handle rate limiting
+                let retry_after = response.headers()
+                    .get("retry-after")
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(1.0);
+                
+                retries += 1;
+                if retries > max_retries {
+                    let text = response.text().await
+                        .unwrap_or_else(|_| "Could not read response body".to_string());
+                    
+                    error!("Discord API rate limit exceeded after {} retries. Body: {}", max_retries, text);
+                    return Err(Error::Unknown(format!("Discord API rate limit exceeded after {} retries", max_retries)));
+                }
+                
+                info!("Rate limited by Discord API, retrying after {} seconds (attempt {}/{})", 
+                      retry_after, retries, max_retries);
+                
+                // Sleep for the specified time before retrying
+                tokio::time::sleep(std::time::Duration::from_secs_f64(retry_after)).await;
+                continue;
+            } else {
+                // Other error
+                let status = response.status();
+                let text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Could not read response body".to_string());
+
+                error!("Discord API error: Status {}, Body: {}", status, text);
+                return Err(Error::Unknown(format!("Discord API error: {}", status)));
+            }
         }
-
-        // Parse the response
-        let guilds: Vec<DiscordGuild> = response.json().await.map_err(|e| {
-            error!("Failed to parse Discord guilds response: {}", e);
-            Error::Unknown(format!("Failed to parse Discord guilds response: {}", e))
-        })?;
-
-        Ok(guilds)
     }
 
     /// Get detailed information about a specific guild

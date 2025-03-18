@@ -173,8 +173,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onGuildSelect }) => {
   // Get initial letter of guild name for avatar fallback
   const getInitial = (name: string) => name && name.length > 0 ? name.charAt(0).toUpperCase() : '?';
 
-  // Convert Discord icon hash to URL
-  const getIconUrl = (guildId: string, iconHash?: string) => {
+  // Convert Discord icon hash to URL or use provided URL
+  const getIconUrl = (guildId: string, iconHash?: string, iconUrl?: string) => {
+    if (iconUrl) return iconUrl;
     if (!iconHash) return undefined;
     return `https://cdn.discordapp.com/icons/${guildId}/${iconHash}.png`;
   };
@@ -199,8 +200,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onGuildSelect }) => {
                 onClick={() => handleGuildClick(guild)}
               >
                 <GuildItemContent>
-                  <GuildIcon iconUrl={getIconUrl(guild.id, guild.icon)}>
-                    {!guild.icon && getInitial(guild.name)}
+                  <GuildIcon iconUrl={getIconUrl(guild.id, guild.icon, guild.icon_url)}>
+                    {!guild.icon && !guild.icon_url && getInitial(guild.name)}
                   </GuildIcon>
                   <GuildName>{guild.name}</GuildName>
                 </GuildItemContent>

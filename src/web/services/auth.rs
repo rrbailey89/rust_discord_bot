@@ -167,7 +167,7 @@ impl AuthService {
         Ok(user)
     }
     
-    /// Fetch user's guilds from Discord API
+    /// Fetch user's guilds from Discord API with rate limit handling
     pub async fn fetch_discord_guilds(&self, access_token: &str) -> Result<Vec<DiscordGuild>, Error> {
         // Create headers with authorization
         let mut headers = HeaderMap::new();
@@ -177,28 +177,58 @@ impl AuthService {
                 .map_err(|e| Error::Unknown(format!("Invalid header value: {}", e)))?,
         );
         
-        // Fetch guilds data from Discord API
-        let response = self.http_client
-            .get("https://discord.com/api/v10/users/@me/guilds")
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| Error::Unknown(format!("Discord API request error: {}", e)))?;
-            
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await
-                .unwrap_or_else(|_| "Could not read response body".to_string());
-                
-            error!("Discord API error when fetching guilds: Status {}, Body: {}", status, text);
-            return Err(Error::Unknown(format!("Discord API error: {}", status)));
-        }
+        let url = "https://discord.com/api/v10/users/@me/guilds";
+        let mut retries = 0;
+        let max_retries = 3;
         
-        // Parse the response
-        let guilds: Vec<DiscordGuild> = response.json().await
-            .map_err(|e| Error::Unknown(format!("Failed to parse Discord guilds response: {}", e)))?;
-            
-        Ok(guilds)
+        loop {
+            // Fetch guilds data from Discord API
+            let response = self.http_client
+                .get(url)
+                .headers(headers.clone())
+                .send()
+                .await
+                .map_err(|e| Error::Unknown(format!("Discord API request error: {}", e)))?;
+                
+            if response.status().is_success() {
+                // Parse the response
+                let guilds: Vec<DiscordGuild> = response.json().await
+                    .map_err(|e| Error::Unknown(format!("Failed to parse Discord guilds response: {}", e)))?;
+                    
+                return Ok(guilds);
+            } else if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                // Handle rate limiting
+                let retry_after = response.headers()
+                    .get("retry-after")
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(1.0);
+                
+                retries += 1;
+                if retries > max_retries {
+                    let text = response.text().await
+                        .unwrap_or_else(|_| "Could not read response body".to_string());
+                    
+                    error!("Discord API rate limit exceeded after {} retries. Body: {}", max_retries, text);
+                    return Err(Error::Unknown(format!("Discord API rate limit exceeded after {} retries", max_retries)));
+                }
+                
+                info!("Rate limited by Discord API, retrying after {} seconds (attempt {}/{})", 
+                      retry_after, retries, max_retries);
+                
+                // Sleep for the specified time before retrying
+                tokio::time::sleep(std::time::Duration::from_secs_f64(retry_after)).await;
+                continue;
+            } else {
+                // Other error
+                let status = response.status();
+                let text = response.text().await
+                    .unwrap_or_else(|_| "Could not read response body".to_string());
+                    
+                error!("Discord API error when fetching guilds: Status {}, Body: {}", status, text);
+                return Err(Error::Unknown(format!("Discord API error: {}", status)));
+            }
+        }
     }
     
     /// Store user session in the database
