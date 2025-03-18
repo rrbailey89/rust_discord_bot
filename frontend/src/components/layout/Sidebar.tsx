@@ -135,10 +135,34 @@ const Sidebar: React.FC<SidebarProps> = ({ onGuildSelect }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
   
-  // Filter guilds based on search term
-  const filteredGuilds = user?.guilds?.filter((guild) =>
-    guild.name && guild.name.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  // Discord permission constants
+  const ADMINISTRATOR = 0x00000008; // Administrator permission in Discord's permission system
+  
+  // Filter guilds based on:
+  // 1. Search term
+  // 2. User is owner OR has admin permissions
+  // Log all guilds and their permissions for debugging purposes
+  React.useEffect(() => {
+    if (user?.guilds?.length) {
+      console.log('All available guilds:', user.guilds.map(g => ({
+        id: g.id,
+        name: g.name,
+        owner: g.owner,
+        permissions: g.permissions,
+        isAdmin: (g.permissions & ADMINISTRATOR) !== 0,
+        botJoined: g.botJoined
+      })));
+    }
+  }, [user?.guilds]);
+
+  const filteredGuilds = user?.guilds?.filter((guild) => {
+    const matchesSearch = guild.name && guild.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const isOwner = guild.owner === true;
+    const hasAdminPermission = (guild.permissions & ADMINISTRATOR) !== 0;
+    
+    // The guild should be visible if the user is the owner OR has admin permissions
+    return matchesSearch && (isOwner || hasAdminPermission);
+  }) || [];
 
   const handleGuildClick = (guild: Guild) => {
     onGuildSelect(guild.id);
