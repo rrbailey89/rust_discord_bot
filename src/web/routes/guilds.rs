@@ -202,8 +202,14 @@ async fn get_guild(
         }
     };
     
+    // Extract token and convert to string for multiple uses
+    let discord_token = match &session.discord_token {
+        Some(token) => token.clone(),
+        None => String::new(),
+    };
+    
     // Call Discord API to get guild and channels
-    let discord_service = DiscordService::new(session.discord_token.unwrap_or_default());
+    let discord_service = DiscordService::new(discord_token.clone());
     let guild_service = GuildService::new(state.database().clone());
     
     // Check if the bot is in this guild
@@ -215,7 +221,27 @@ async fn get_guild(
         }
     };
     
-    // Get guild details from Discord API
+    // First check if we have this guild in our database to get basic info
+    let guild_info = match auth_service.fetch_discord_guilds(&discord_token).await {
+        Ok(guilds) => {
+            // Find this specific guild in the list
+            let this_guild = guilds.iter().find(|g| g.id == guild_id);
+            if let Some(guild) = this_guild {
+                debug!("Found guild {} in user's guild list", guild_id);
+                // Return this guild info from the list
+                Some(guild.clone())
+            } else {
+                debug!("Guild {} not found in user's guild list", guild_id);
+                None
+            }
+        },
+        Err(e) => {
+            error!("Error fetching guilds from Discord: {}", e);
+            None
+        }
+    };
+    
+    // Get guild details from Discord API - but don't fail if this fails
     let guild_result = discord_service.get_guild(&guild_id).await;
     
     // Get channels only if the bot is in the guild
@@ -226,7 +252,9 @@ async fn get_guild(
         Ok(Vec::new())
     };
     
+    // Handle the response based on available data
     match (guild_result, channels_result) {
+        // Case 1: We successfully got both guild details and channels
         (Ok(guild), Ok(channels)) => {
             // Parse permissions to u64
             let permissions = u64::from_str_radix(&guild.permissions, 10)
@@ -278,6 +306,68 @@ async fn get_guild(
             
             HttpResponse::Ok().json(guild_details)
         },
+        // Case 2: We failed to get guild details but have a backup from guild list
+        (Err(e), channels_result) if guild_info.is_some() => {
+            error!("Failed to get detailed guild info, using fallback: {}", e);
+            let guild = guild_info.unwrap();
+            
+            // Parse permissions to u64
+            let permissions = u64::from_str_radix(&guild.permissions, 10)
+                .unwrap_or_default();
+            
+            // Build icon URL if available
+            let icon_url = guild.icon.as_ref().map(|icon| {
+                format!(
+                    "https://cdn.discordapp.com/icons/{}/{}.png",
+                    guild.id, icon
+                )
+            });
+            
+            // Get channels from result or empty vec
+            let channels = match channels_result {
+                Ok(chans) => chans,
+                Err(_) => Vec::new(),
+            };
+            
+            // Convert channels to our API format
+            let channel_infos: Vec<ChannelInfo> = channels.into_iter()
+                .filter_map(|channel| {
+                    // Only include channels that have a name
+                    channel.name.as_ref().map(|name| {
+                        ChannelInfo {
+                            id: channel.id,
+                            name: name.clone(),
+                            channel_type: channel.channel_type,
+                            position: channel.position.unwrap_or(0),
+                            topic: channel.topic,
+                        }
+                    })
+                })
+                .collect();
+            
+            // Get member count from the database
+            let member_count = match guild_service.get_guild_member_count(guild_id_i64).await {
+                Ok(count) => Some(count),
+                Err(e) => {
+                    error!("Error fetching member count for guild {}: {}", guild_id, e);
+                    None
+                }
+            };
+            
+            // Build the guild details response
+            let guild_details = GuildDetails {
+                id: guild.id,
+                name: guild.name,
+                icon_url,
+                owner: guild.owner.unwrap_or(false),
+                permissions,
+                member_count,
+                channels: channel_infos,
+            };
+            
+            HttpResponse::Ok().json(guild_details)
+        },
+        // Case 3: Both approaches failed
         (Err(e), _) | (_, Err(e)) => {
             error!("Discord API error: {}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({
