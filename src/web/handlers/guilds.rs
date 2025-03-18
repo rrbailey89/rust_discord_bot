@@ -69,37 +69,67 @@ let guild_service = match state.database().get_client().await {
             );
         }
     };
+
+    // Check if the bot is in this guild (without returning 404 if it's not)
+    let guild_id_i64 = match guild_id.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            error!("Invalid guild ID format: {}", guild_id);
+            return error_response(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                "Invalid guild ID format",
+            );
+        }
+    };
     
-    // Get guild details
-match guild_service.get_guild(&guild_id).await {
-    Ok(guild) => {
-        // Attempt to fetch member list to get count
-        let member_count = if let Ok(members) = guild_service.get_guild_members(&guild_id, 1000).await {
-            members.len() as i64
-        } else {
-            // If an error occurs, default to 0 or handle differently as needed
-            0
-        };
+    let bot_joined = match state.database().get_client().await {
+        Ok(client) => {
+            match client.query_opt(
+                "SELECT 1 FROM guild_info WHERE guild_id = $1 LIMIT 1",
+                &[&guild_id_i64],
+            ).await {
+                Ok(result) => result.is_some(),
+                Err(e) => {
+                    error!("Error checking if bot is in guild {}: {}", guild_id, e);
+                    false // Default to false on error
+                }
+            }
+        },
+        Err(e) => {
+            error!("Database error: {}", e);
+            false // Default to false on error
+        }
+    };
+    
+    // Get guild details from Discord API
+    match guild_service.get_guild(&guild_id).await {
+        Ok(guild) => {
+            // Attempt to fetch member list to get count
+            let member_count = if let Ok(members) = guild_service.get_guild_members(&guild_id, 1000).await {
+                members.len() as i64
+            } else {
+                // If an error occurs, default to 0 or handle differently as needed
+                0
+            };
 
-        // Build response object with membership status (assuming the guild is returned => joined)
-        // If you want to determine if the bot is actually part of the guild, you may need other checks
-        let result = json!({
-            "guild_id": guild.id,
-            "name": guild.name,
-            "icon": guild.icon,
-            "features": guild.features,
-            "member_count": member_count,
-            "bot_joined": true
-        });
+            // Build response object with correct membership status
+            let result = json!({
+                "id": guild.id,
+                "name": guild.name,
+                "icon": guild.icon,
+                "features": guild.features,
+                "member_count": member_count,
+                "botJoined": bot_joined
+            });
 
-        success(result)
-    },
-    Err(e) => {
-        error!("Error fetching guild details: {}", e);
-        error_response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            &format!("Error fetching guild details: {}", e),
-        )
+            success(result)
+        },
+        Err(e) => {
+            error!("Error fetching guild details: {}", e);
+            error_response(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Error fetching guild details: {}", e),
+            )
+        }
     }
-}
 }

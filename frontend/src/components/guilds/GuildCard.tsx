@@ -125,8 +125,9 @@ interface GuildCardProps {
   onWordDetection: (guildId: string) => void;
 }
 
-// Helper function to convert Discord icon hash to URL
-const getIconUrl = (guildId: string, iconHash?: string) => {
+// Helper function to convert Discord icon hash to URL or use provided URL
+const getIconUrl = (guildId: string, iconHash?: string, iconUrl?: string) => {
+  if (iconUrl) return iconUrl;
   if (!iconHash) return undefined;
   return `https://cdn.discordapp.com/icons/${guildId}/${iconHash}.png`;
 };
@@ -144,8 +145,8 @@ const GuildCard: React.FC<GuildCardProps> = ({
   return (
     <Card>
       <Header>
-        <GuildIcon iconUrl={getIconUrl(guild.id, guild.icon)}>
-          {!guild.icon && getInitial(guild.name)}
+        <GuildIcon iconUrl={getIconUrl(guild.id, guild.icon, guild.icon_url)}>
+          {!guild.icon && !guild.icon_url && getInitial(guild.name)}
         </GuildIcon>
         <GuildInfo>
           <GuildName>{guild.name || 'Unnamed Server'}</GuildName>

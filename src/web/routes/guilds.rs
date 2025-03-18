@@ -215,15 +215,16 @@ async fn get_guild(
         }
     };
     
-    if !bot_joined {
-        return HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Bot is not in this guild"
-        }));
-    }
-    
     // Get guild details from Discord API
     let guild_result = discord_service.get_guild(&guild_id).await;
-    let channels_result = discord_service.get_guild_channels(&guild_id).await;
+    
+    // Get channels only if the bot is in the guild
+    let channels_result = if bot_joined {
+        discord_service.get_guild_channels(&guild_id).await
+    } else {
+        // Return empty channels if bot is not in the guild
+        Ok(Vec::new())
+    };
     
     match (guild_result, channels_result) {
         (Ok(guild), Ok(channels)) => {

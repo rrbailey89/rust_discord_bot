@@ -15,6 +15,7 @@ export interface Guild {
   id: string;
   name: string;
   icon?: string;
+  icon_url?: string;
   owner: boolean;
   permissions: number;
   botJoined?: boolean;
