@@ -181,31 +181,54 @@ impl GuildService {
     pub async fn is_bot_in_guild(&self, guild_id: i64) -> Result<bool, Error> {
         let client = self.db.get_client().await?;
 
-        // Check not just if guild exists, but if bot is actively a member
-        let row = client
+        // First check if the guild exists in guild_info
+        let guild_exists = client
             .query_opt(
-                "SELECT 1 FROM guild_info gi 
-                 JOIN guild_members gm ON gi.guild_id = gm.guild_id
-                 WHERE gi.guild_id = $1 
-                 LIMIT 1",
+                "SELECT 1 FROM guild_info WHERE guild_id = $1 LIMIT 1",
                 &[&guild_id],
             )
-            .await?;
+            .await?
+            .is_some();
 
-        Ok(row.is_some())
+        // Then check if we have any members for this guild
+        let has_members = client
+            .query_opt(
+                "SELECT 1 FROM guild_members WHERE guild_id = $1 LIMIT 1",
+                &[&guild_id],
+            )
+            .await?
+            .is_some();
+
+        // The bot is considered to be in the guild if both conditions are true
+        Ok(guild_exists && has_members)
     }
     
     /// Get the member count for a specific guild
     pub async fn get_guild_member_count(&self, guild_id: i64) -> Result<i32, Error> {
         let client = self.db.get_client().await?;
         
-        let row = client
+        // Use a simple count query with error handling
+        match client
             .query_opt(
                 "SELECT COUNT(*) FROM guild_members WHERE guild_id = $1",
                 &[&guild_id],
             )
-            .await?;
-        
-        Ok(row.map_or(0, |r| r.get::<_, i64>(0) as i32))
+            .await {
+                Ok(Some(row)) => {
+                    // Successfully got the count
+                    let count: i64 = row.get(0);
+                    Ok(count as i32)
+                },
+                Ok(None) => {
+                    // This shouldn't happen with COUNT(*), but handle it anyway
+                    debug!("No count result returned for guild {}", guild_id);
+                    Ok(0)
+                },
+                Err(e) => {
+                    // Handle database errors by logging and returning 0
+                    error!("Error counting members for guild {}: {}", guild_id, e);
+                    Ok(0) // Return 0 instead of propagating the error
+                }
+            }
     }
 }

@@ -92,14 +92,11 @@ async fn list_guilds(
                     }
                 };
                 
-                // Check if the bot is in this guild
-                let bot_joined = match guild_service.is_bot_in_guild(guild_id).await {
-                    Ok(result) => result,
-                    Err(e) => {
-                        error!("Error checking if bot is in guild {}: {}", guild_id, e);
-                        false
-                    }
-                };
+                // Simple check if the bot is in this guild
+                let bot_joined = guild_service.is_bot_in_guild(guild_id).await.unwrap_or_else(|e| {
+                    error!("Error checking if bot is in guild {}: {}", guild_id, e);
+                    false
+                });
                 
                 // Parse permissions to u64
                 let permissions = u64::from_str_radix(&discord_guild.permissions, 10)
