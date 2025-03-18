@@ -67,53 +67,58 @@ async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Resul
 
     // Store guild channels in the database
     data.database.store_guild_channels(guild).await?;
-    
-    // Additionally, fetch and store the guild members
-    // We'll do this in a separate task to not delay the guild create handling
+
+    // Additionally, fetch and store the guild members.
+    // We'll do this in a separate task to avoid blocking.
     let ctx_clone = ctx.clone();
-    let guild_id = guild.id;
+    let guild_id_clone = guild.id;
+    let guild_id_i64 = guild.id.get() as i64;
     let database = data.database.clone();
-    
-    // Spawn a background task to fetch and store members
+    let guild_roles = guild.roles.clone();
+
     tokio::spawn(async move {
-        tracing::info!("Starting background task to fetch members for guild {}", guild_id);
-        
-        // Fetch the first batch of members (up to 1000)
-        match guild_id.members(&ctx_clone.http, None, None).await {
+        tracing::info!("Starting background task to fetch members for guild {}", guild_id_i64);
+
+        // Fetch up to 1000 members
+        match guild_id_clone.members(&ctx_clone.http, None, None).await {
             Ok(members) => {
-                tracing::info!("Fetched {} members for guild {}", members.len(), guild_id);
-                
+                tracing::info!("Fetched {} members for guild {}", members.len(), guild_id_i64);
+
                 // Convert members to JSON format expected by store_guild_members
                 let members_json: Vec<serde_json::Value> = members.iter().map(|m| {
                     let user = serde_json::json!({
                         "id": m.user.id.to_string(),
                         "username": m.user.name,
                         "discriminator": m.user.discriminator,
-                        "avatar": m.user.avatar.clone()
+                        "avatar": m.user.avatar
                     });
-                    
-                    let roles = m.roles.iter().map(|r| r.to_string()).collect::<Vec<String>>();
-                    
+
+                    let role_names = m.roles
+                        .iter()
+                        .filter_map(|role_id| guild_roles.get(role_id))
+                        .map(|r| r.name.clone())
+                        .collect::<Vec<String>>();
+
                     serde_json::json!({
                         "user": user,
                         "nick": m.nick,
-                        "roles": roles,
+                        "roles": role_names,
                         "joined_at": m.joined_at.map(|dt| dt.to_rfc3339())
                     })
                 }).collect();
-                
-                // Store the members in the database
-                match database.store_guild_members(guild_id.get() as i64, &members_json).await {
+
+                // Insert into database
+                match database.store_guild_members(guild_id_i64, &members_json).await {
                     Ok(count) => {
-                        tracing::info!("Successfully stored {} members for guild {}", count, guild_id);
+                        tracing::info!("Successfully stored {} members for guild {}", count, guild_id_i64);
                     },
                     Err(e) => {
-                        tracing::error!("Failed to store members for guild {}: {}", guild_id, e);
+                        tracing::error!("Failed to store members for guild {}: {}", guild_id_i64, e);
                     }
                 }
             },
             Err(e) => {
-                tracing::error!("Failed to fetch members for guild {}: {}", guild_id, e);
+                tracing::error!("Failed to fetch members for guild {}: {}", guild_id_i64, e);
             }
         }
     });
@@ -130,6 +135,7 @@ async fn handle_guild_delete(_ctx: &Context, guild_id: GuildId, data: &Data) -> 
 
     Ok(())
 }
+
 async fn handle_message_delete(
     ctx: &Context,
     channel_id: &ChannelId,
@@ -248,7 +254,6 @@ fn calculate_required_exp(level: i32) -> i32 {
 }
 
 async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), Error> {
-
     // Get the user who added the reaction
     let user = reaction.user(&ctx.http).await?;
 

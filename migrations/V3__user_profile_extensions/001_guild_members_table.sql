@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS guild_members (
     guild_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     nickname TEXT,
-    roles JSONB NOT NULL DEFAULT '[]'::JSONB,
+roles text[] NOT NULL,
     joined_at TEXT,
     PRIMARY KEY (guild_id, user_id)
 );
