@@ -87,16 +87,17 @@ pub async fn start_server(bot_data: Arc<Data>, port: u16) -> Result<(), crate::e
                             .configure(routes::auth::configure)
                     )
                     
-                    // Protected routes (require JWT auth)
-                    .service(
-                        web::scope("")
-                            .wrap(JwtAuth::new(jwt_secret.clone()))
-                            .configure(routes::guilds::configure)
-                            .configure(routes::commands::configure)
-                            .configure(routes::word_detection::configure)
-                            .configure(routes::settings::configure)
-                            .configure(routes::analytics::configure)
-                    )
+            // Protected routes (require JWT auth)
+            .service(
+                web::scope("")
+                    .wrap(JwtAuth::new(jwt_secret.clone()))
+                    .configure(routes::guilds::configure)
+                    .configure(routes::commands::configure)
+                    .configure(routes::word_detection::configure)
+                    .configure(routes::settings::configure)
+                    .configure(routes::analytics::configure)
+                    .configure(routes::users::configure)
+            )
             )
             
             // Client-side routing support - explicitly define SPA routes
