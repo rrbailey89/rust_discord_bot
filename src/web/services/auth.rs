@@ -395,7 +395,7 @@ impl AuthService {
         self.store_user_session(user.id.parse::<i64>().unwrap_or_default(), &token).await?;
         
         // Fetch user's guilds from Discord API
-        let guilds = self.fetch_discord_guilds(&token.access_token).await
+        let guild_ids = self.fetch_discord_guilds(&token.access_token).await
             .map(|discord_guilds| {
                 // Extract just the guild IDs
                 discord_guilds.into_iter()
@@ -409,10 +409,10 @@ impl AuthService {
             });
         
         // Log how many guilds we found
-        info!("Found {} guilds for user {}", guilds.len(), user.id);
+        info!("Found {} guilds for user {}", guild_ids.len(), user.id);
         
         // Generate JWT
-        let (jwt, expires_in) = self.generate_jwt(&user, guilds.clone())?;
+        let (jwt, expires_in) = self.generate_jwt(&user, guild_ids.clone())?;
         
         // Build the response
         let auth_response = AuthResponse {
@@ -427,7 +427,7 @@ impl AuthService {
                         user.id, avatar
                     )
                 }),
-                guilds, // Use the fetched guilds array
+                guilds: guild_ids, // Use the fetched guild IDs
                 email: user.email.clone(),
                 verified: user.verified,
                 locale: user.locale.clone(),
