@@ -19,6 +19,7 @@ pub struct GuildInfo {
     /// Whether the bot is in this guild
     pub bot_joined: bool,
     /// Number of members in the guild
+    #[serde(rename = "memberCount")]
     pub member_count: Option<i32>,
 }
 
@@ -36,6 +37,7 @@ pub struct GuildDetails {
     /// User's permissions in the guild
     pub permissions: u64,
     /// Number of members in the guild
+    #[serde(rename = "memberCount")]
     pub member_count: Option<i32>,
     /// List of channels in the guild
     pub channels: Vec<ChannelInfo>,
