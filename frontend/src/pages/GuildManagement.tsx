@@ -168,11 +168,7 @@ const getInitial = (name: string) => name && name.length > 0 ? name.charAt(0).to
 
 // Fetch guild details
 const fetchGuildDetails = async (guildId: string): Promise<Guild> => {
-  const response = await api.get(`/guilds/${guildId}`);
-  // Check if the response is a success response wrapper
-  if (response.data && response.data.data) {
-    return response.data.data;
-  }
+  const response = await api.get(`/api/guilds/${guildId}`);
   return response.data;
 };
 
