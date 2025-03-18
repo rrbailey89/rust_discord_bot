@@ -116,6 +116,13 @@ export const updateGuildSettings = async (guildId: string, settings: any) => {
 // Guilds
 export const fetchGuilds = async () => {
   const response = await api.get('/guilds');
+  
+  // Check if the response is a success response wrapper
+  if (response.data && response.data.data) {
+    return response.data.data;
+  }
+  
+  // Otherwise return the direct data
   return response.data;
 };
 
