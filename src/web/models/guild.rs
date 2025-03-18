@@ -17,6 +17,7 @@ pub struct GuildInfo {
     /// User's permissions in the guild
     pub permissions: u64,
     /// Whether the bot is in this guild
+    #[serde(rename = "botJoined")]
     pub bot_joined: bool,
     /// Number of members in the guild
     #[serde(rename = "memberCount")]
