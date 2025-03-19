@@ -10,7 +10,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Rust build stage
-FROM rust:1.78 as rust-builder
+FROM rust:1.85 as rust-builder
 WORKDIR /usr/src/app
 COPY . .
 # Copy the built frontend files to the static directory
