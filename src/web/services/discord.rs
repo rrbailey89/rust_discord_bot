@@ -5,6 +5,30 @@ use crate::error::Error;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn as tracing_warn};
+use chrono::Utc;
+
+/// Structure to store cache metadata with the data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedResponse<T> {
+    /// The actual data
+    pub data: T,
+    /// When this data was cached (Unix timestamp)
+    pub cached_at: i64,
+    /// Source of the data ("api" or "cache")
+    pub source: String,
+    /// Optional ETag from the response
+    pub etag: Option<String>,
+}
+
+/// Helper function to create a CachedResponse from API data
+fn create_cached_response<T>(data: T, etag: Option<String>) -> CachedResponse<T> {
+    CachedResponse {
+        data,
+        cached_at: Utc::now().timestamp(),
+        source: "api".to_string(),
+        etag,
+    }
+}
 
 /// Discord Guild representation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,64 +161,90 @@ impl DiscordService {
         headers
     }
 
+    /// Generate a hash of the token for use in cache keys
+    fn token_hash(&self) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        self.token.hash(&mut hasher);
+        format!("{:x}", hasher.finish())
+    }
+
     /// Get current user's guilds with rate limit handling and caching
-    pub async fn get_current_user_guilds(&self) -> Result<Vec<DiscordGuild>, Error> {
-        // Check cache first if available
-        if let Some(cache) = &self.cache {
-            let cache_key = format!("discord:guilds:{}", self.token_hash());
-            debug!("Checking cache for key: {}", cache_key);
-            
-            match cache.get::<Vec<DiscordGuild>, _>(&cache_key).await {
-                Ok(cached) => {
-                    debug!("Cache hit for Discord guilds");
-                    return Ok(cached.value);
-                },
-                Err(_) => {
-                    debug!("Cache miss for Discord guilds");
+    pub async fn get_current_user_guilds(&self, force_refresh: bool) -> Result<CachedResponse<Vec<DiscordGuild>>, Error> {
+        let url = format!("{}/users/@me/guilds", self.api_base);
+        let cache_key = format!("discord:guilds:{}", self.token_hash());
+        let etag_key = format!("discord:guilds:etag:{}", self.token_hash());
+        
+        // Check cache first if not forcing refresh
+        if !force_refresh {
+            if let Some(cache) = &self.cache {
+                debug!("Checking cache for key: {}", cache_key);
+                
+                match cache.get::<CachedResponse<Vec<DiscordGuild>>, _>(&cache_key).await {
+                    Ok(cached) => {
+                        debug!("Cache hit for Discord guilds");
+                        // Clone the response and update source
+                        let mut response = cached.value;
+                        response.source = "cache".to_string();
+                        return Ok(response);
+                    },
+                    Err(_) => {
+                        debug!("Cache miss for Discord guilds");
+                    }
                 }
             }
         }
         
-        let url = format!("{}/users/@me/guilds", self.api_base);
         debug!("Fetching guilds from Discord API: {}", url);
-
+        
+        // Handle rate limiting here with retries if needed
         let mut retries = 0;
         let max_retries = 3;
         
         loop {
-            let response = self
-                .client
-                .get(&url)
-                .headers(self.auth_headers())
-                .send()
-                .await
-                .map_err(|e| {
-                    error!("Discord API request error: {}", e);
-                    Error::Unknown(format!("Discord API request error: {}", e))
-                })?;
-
-            if response.status().is_success() {
-                // Parse the response
-                let guilds: Vec<DiscordGuild> = response.json().await.map_err(|e| {
-                    error!("Failed to parse Discord guilds response: {}", e);
-                    Error::Unknown(format!("Failed to parse Discord guilds response: {}", e))
-                })?;
-
-                // Store in cache if available
+            // Initialize the request
+            let mut request = self.client.get(&url);
+            request = request.headers(self.auth_headers());
+            
+            // Add ETag header if available in cache
+            if let Some(cache) = &self.cache {
+                if let Ok(cached_etag) = cache.get::<String, _>(&etag_key).await {
+                    let etag = cached_etag.value;
+                    debug!("Using cached ETag: {}", &etag);
+                    request = request.header("If-None-Match", etag);
+                }
+            }
+            
+            let response = request.send().await.map_err(|e| {
+                error!("Discord API request error: {}", e);
+                Error::Unknown(format!("Discord API request error: {}", e))
+            })?;
+            
+            // Check for 304 Not Modified response
+            if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+                debug!("Discord API returned 304 Not Modified for guilds");
+                
+                // Return cached data since nothing has changed
                 if let Some(cache) = &self.cache {
-                    let cache_key = format!("discord:guilds:{}", self.token_hash());
-                    let ttl = Some(Duration::from_secs(300)); // 5 minute cache TTL
-                    
-                    if let Err(e) = cache.set_serialized(&cache_key, &guilds, ttl, false).await {
-                        tracing_warn!("Failed to cache Discord guilds: {}", e);
-                    } else {
-                        debug!("Cached Discord guilds for 5 minutes");
+                    match cache.get::<CachedResponse<Vec<DiscordGuild>>, _>(&cache_key).await {
+                        Ok(cached) => {
+                            debug!("Using cached data - 304 Not Modified");
+                            let mut response = cached.value;
+                            response.source = "cache".to_string();
+                            return Ok(response);
+                        },
+                        Err(_) => {
+                            debug!("Cache inconsistency - 304 but no cached data");
+                            // Fall through to regular response handling
+                        }
                     }
                 }
-
-                return Ok(guilds);
-            } else if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                // Handle rate limiting
+            }
+            
+            // Handle rate limiting
+            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 let retry_after = response.headers()
                     .get("retry-after")
                     .and_then(|h| h.to_str().ok())
@@ -215,12 +265,11 @@ impl DiscordService {
                 
                 // Sleep for the specified time before retrying
                 tokio::time::sleep(std::time::Duration::from_secs_f64(retry_after)).await;
-                
-                // Log that we're making a retry attempt
-                debug!("Attempting retry #{} for Discord API request", retries);
                 continue;
-            } else {
-                // Other error
+            }
+            
+            // Handle other non-success responses
+            if !response.status().is_success() {
                 let status = response.status();
                 let text = response
                     .text()
@@ -230,34 +279,128 @@ impl DiscordService {
                 error!("Discord API error: Status {}, Body: {}", status, text);
                 return Err(Error::Unknown(format!("Discord API error: {}", status)));
             }
+            
+            // Get new ETag if present
+            let new_etag = response.headers()
+                .get("ETag")
+                .and_then(|v| v.to_str().ok())
+                .map(String::from);
+                
+            // Parse the response
+            let guilds: Vec<DiscordGuild> = response.json().await.map_err(|e| {
+                error!("Failed to parse Discord guilds response: {}", e);
+                Error::Unknown(format!("Failed to parse Discord guilds response: {}", e))
+            })?;
+
+            // Create cached response
+            let cached_response = create_cached_response(guilds, new_etag.clone());
+
+            // Store in cache if available
+            if let Some(cache) = &self.cache {
+                let ttl = Some(Duration::from_secs(300)); // 5 minute cache TTL
+                
+                if let Err(e) = cache.set_serialized(&cache_key, &cached_response, ttl, false).await {
+                    tracing_warn!("Failed to cache Discord guilds: {}", e);
+                } else {
+                    debug!("Cached Discord guilds for 5 minutes");
+                }
+                
+                // Also store ETag separately if we have one
+                if let Some(etag_value) = new_etag {
+                    if let Err(e) = cache.set(&etag_key, etag_value, ttl, false).await {
+                        tracing_warn!("Failed to cache Discord guilds ETag: {}", e);
+                    }
+                }
+            }
+
+            return Ok(cached_response);
         }
     }
     
-    /// Generate a hash of the token for use in cache keys
-    fn token_hash(&self) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        
-        let mut hasher = DefaultHasher::new();
-        self.token.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
+    /// Method to invalidate guilds cache
+    pub async fn invalidate_guilds_cache(&self) -> Result<(), Error> {
+        if let Some(cache) = &self.cache {
+            let cache_key = format!("discord:guilds:{}", self.token_hash());
+            let etag_key = format!("discord:guilds:etag:{}", self.token_hash());
+            
+            debug!("Invalidating guild caches");
+            
+            // Just create cache key with very short TTL to effectively invalidate
+            let short_ttl = Some(Duration::from_secs(1));
+            
+            // Ignore errors during cache invalidation
+            let _ = cache.set_serialized(&cache_key, &Vec::<DiscordGuild>::new(), short_ttl, true).await;
+            let _ = cache.set(&etag_key, String::new(), short_ttl, true).await;
+        }
+        Ok(())
     }
 
-    /// Get detailed information about a specific guild
-pub async fn get_guild(&self, guild_id: &str) -> Result<DiscordGuild, Error> {
+    /// Get detailed information about a specific guild with caching
+    pub async fn get_guild(&self, guild_id: &str, force_refresh: bool) -> Result<CachedResponse<DiscordGuild>, Error> {
         let url = format!("{}/guilds/{}?with_counts=true", self.api_base, guild_id);
+        let cache_key = format!("discord:guild:{}:{}", self.token_hash(), guild_id);
+        let etag_key = format!("discord:guild:etag:{}:{}", self.token_hash(), guild_id);
+        
+        // Check cache first if not forcing refresh
+        if !force_refresh {
+            if let Some(cache) = &self.cache {
+                debug!("Checking cache for key: {}", cache_key);
+                
+                match cache.get::<CachedResponse<DiscordGuild>, _>(&cache_key).await {
+                    Ok(cached) => {
+                        debug!("Cache hit for Discord guild details");
+                        // Clone the response and update source
+                        let mut response = cached.value;
+                        response.source = "cache".to_string();
+                        return Ok(response);
+                    },
+                    Err(_) => {
+                        debug!("Cache miss for Discord guild details");
+                    }
+                }
+            }
+        }
+        
         debug!("Fetching guild details from Discord API: {}", url);
 
-let response = self
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Discord API request error: {}", e);
-                Error::Unknown(format!("Discord API request error: {}", e))
-            })?;
+        // Initialize the request
+        let mut request = self.client.get(&url);
+        request = request.headers(self.auth_headers());
+        
+        // Add ETag header if available in cache
+        if let Some(cache) = &self.cache {
+            if let Ok(cached_etag) = cache.get::<String, _>(&etag_key).await {
+                let etag = cached_etag.value;
+                debug!("Using cached ETag for guild: {}", &etag);
+                request = request.header("If-None-Match", etag);
+            }
+        }
+        
+        let response = request.send().await.map_err(|e| {
+            error!("Discord API request error: {}", e);
+            Error::Unknown(format!("Discord API request error: {}", e))
+        })?;
+        
+        // Check for 304 Not Modified
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            debug!("Discord API returned 304 Not Modified for guild");
+            
+            // Return cached data since nothing has changed
+            if let Some(cache) = &self.cache {
+                match cache.get::<CachedResponse<DiscordGuild>, _>(&cache_key).await {
+                    Ok(cached) => {
+                        debug!("Using cached data - 304 Not Modified");
+                        let mut response = cached.value;
+                        response.source = "cache".to_string();
+                        return Ok(response);
+                    },
+                    Err(_) => {
+                        debug!("Cache inconsistency - 304 but no cached data");
+                        // Continue to regular request
+                    }
+                }
+            }
+        }
 
         if !response.status().is_success() {
             let status = response.status();
@@ -270,30 +413,108 @@ let response = self
             return Err(Error::Unknown(format!("Discord API error: {}", status)));
         }
 
+        // Get new ETag if present
+        let new_etag = response.headers()
+            .get("ETag")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+            
         // Parse the response
         let guild: DiscordGuild = response.json().await.map_err(|e| {
             error!("Failed to parse Discord guild response: {}", e);
             Error::Unknown(format!("Failed to parse Discord guild response: {}", e))
         })?;
 
-        Ok(guild)
+        // Create cached response
+        let cached_response = create_cached_response(guild, new_etag.clone());
+
+        // Store in cache if available
+        if let Some(cache) = &self.cache {
+            let ttl = Some(Duration::from_secs(300)); // 5 minute cache TTL
+            
+            if let Err(e) = cache.set_serialized(&cache_key, &cached_response, ttl, false).await {
+                tracing_warn!("Failed to cache Discord guild: {}", e);
+            } else {
+                debug!("Cached Discord guild for 5 minutes");
+            }
+            
+            // Also store ETag separately
+            if let Some(etag_value) = new_etag {
+                if let Err(e) = cache.set(&etag_key, etag_value, ttl, false).await {
+                    tracing_warn!("Failed to cache Discord guild ETag: {}", e);
+                }
+            }
+        }
+
+        Ok(cached_response)
     }
 
-    /// Get channels for a specific guild
-    pub async fn get_guild_channels(&self, guild_id: &str) -> Result<Vec<DiscordChannel>, Error> {
+    /// Get channels for a specific guild with caching
+    pub async fn get_guild_channels(&self, guild_id: &str, force_refresh: bool) -> Result<CachedResponse<Vec<DiscordChannel>>, Error> {
         let url = format!("{}/guilds/{}/channels", self.api_base, guild_id);
+        let cache_key = format!("discord:channels:{}:{}", self.token_hash(), guild_id);
+        let etag_key = format!("discord:channels:etag:{}:{}", self.token_hash(), guild_id);
+        
+        // Check cache first if not forcing refresh
+        if !force_refresh {
+            if let Some(cache) = &self.cache {
+                debug!("Checking cache for key: {}", cache_key);
+                
+                match cache.get::<CachedResponse<Vec<DiscordChannel>>, _>(&cache_key).await {
+                    Ok(cached) => {
+                        debug!("Cache hit for Discord channels");
+                        // Clone the response and update source
+                        let mut response = cached.value;
+                        response.source = "cache".to_string();
+                        return Ok(response);
+                    },
+                    Err(_) => {
+                        debug!("Cache miss for Discord channels");
+                    }
+                }
+            }
+        }
+        
         debug!("Fetching guild channels from Discord API: {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Discord API request error: {}", e);
-                Error::Unknown(format!("Discord API request error: {}", e))
-            })?;
+        // Initialize the request
+        let mut request = self.client.get(&url);
+        request = request.headers(self.auth_headers());
+        
+        // Add ETag header if available in cache
+        if let Some(cache) = &self.cache {
+            if let Ok(cached_etag) = cache.get::<String, _>(&etag_key).await {
+                let etag = cached_etag.value;
+                debug!("Using cached ETag for channels: {}", &etag);
+                request = request.header("If-None-Match", etag);
+            }
+        }
+        
+        let response = request.send().await.map_err(|e| {
+            error!("Discord API request error: {}", e);
+            Error::Unknown(format!("Discord API request error: {}", e))
+        })?;
+        
+        // Check for 304 Not Modified
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            debug!("Discord API returned 304 Not Modified for channels");
+            
+            // Return cached data since nothing has changed
+            if let Some(cache) = &self.cache {
+                match cache.get::<CachedResponse<Vec<DiscordChannel>>, _>(&cache_key).await {
+                    Ok(cached) => {
+                        debug!("Using cached data - 304 Not Modified");
+                        let mut response = cached.value;
+                        response.source = "cache".to_string();
+                        return Ok(response);
+                    },
+                    Err(_) => {
+                        debug!("Cache inconsistency - 304 but no cached data");
+                        // Continue to regular request
+                    }
+                }
+            }
+        }
 
         if !response.status().is_success() {
             let status = response.status();
@@ -306,22 +527,66 @@ let response = self
             return Err(Error::Unknown(format!("Discord API error: {}", status)));
         }
 
+        // Get new ETag if present
+        let new_etag = response.headers()
+            .get("ETag")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+            
         // Parse the response
         let channels: Vec<DiscordChannel> = response.json().await.map_err(|e| {
             error!("Failed to parse Discord channels response: {}", e);
             Error::Unknown(format!("Failed to parse Discord channels response: {}", e))
         })?;
 
-        Ok(channels)
+        // Create cached response
+        let cached_response = create_cached_response(channels, new_etag.clone());
+
+        // Store in cache if available
+        if let Some(cache) = &self.cache {
+            let ttl = Some(Duration::from_secs(300)); // 5 minute cache TTL
+            
+            if let Err(e) = cache.set_serialized(&cache_key, &cached_response, ttl, false).await {
+                tracing_warn!("Failed to cache Discord channels: {}", e);
+            } else {
+                debug!("Cached Discord channels for 5 minutes");
+            }
+            
+            // Also store ETag separately
+            if let Some(etag_value) = new_etag {
+                if let Err(e) = cache.set(&etag_key, etag_value, ttl, false).await {
+                    tracing_warn!("Failed to cache Discord channels ETag: {}", e);
+                }
+            }
+        }
+
+        Ok(cached_response)
+    }
+    
+    /// Method to invalidate channels cache
+    pub async fn invalidate_channels_cache(&self, guild_id: &str) -> Result<(), Error> {
+        if let Some(cache) = &self.cache {
+            let cache_key = format!("discord:channels:{}:{}", self.token_hash(), guild_id);
+            let etag_key = format!("discord:channels:etag:{}:{}", self.token_hash(), guild_id);
+            
+            debug!("Invalidating channels cache for guild {}", guild_id);
+            
+            // Just create cache key with very short TTL to effectively invalidate
+            let short_ttl = Some(Duration::from_secs(1));
+            
+            // Ignore errors during cache invalidation
+            let _ = cache.set_serialized(&cache_key, &Vec::<DiscordChannel>::new(), short_ttl, true).await;
+            let _ = cache.set(&etag_key, String::new(), short_ttl, true).await;
+        }
+        Ok(())
     }
 
     /// Get members of a specific guild
-pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Vec<DiscordGuildMember>, Error> {
+    pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Vec<DiscordGuildMember>, Error> {
         let url = format!("{}/guilds/{}/members?limit={}", self.api_base, guild_id, limit);
         debug!("Fetching guild members from Discord API: {}", url);
 
-        let response = self
-            .client
+        let response = self.client
             .get(&url)
             .headers(self.auth_headers())
             .send()
@@ -352,21 +617,72 @@ pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Ve
         Ok(members)
     }
 
-    /// Get current user information
-    pub async fn get_current_user(&self) -> Result<DiscordUser, Error> {
+    /// Get current user information with caching and ETag support
+    pub async fn get_current_user(&self, force_refresh: bool) -> Result<CachedResponse<DiscordUser>, Error> {
         let url = format!("{}/users/@me", self.api_base);
+        let cache_key = format!("discord:user:{}", self.token_hash());
+        let etag_key = format!("discord:user:etag:{}", self.token_hash());
+        
+        // Check cache first if not forcing refresh
+        if !force_refresh {
+            if let Some(cache) = &self.cache {
+                debug!("Checking cache for key: {}", cache_key);
+                
+                match cache.get::<CachedResponse<DiscordUser>, _>(&cache_key).await {
+                    Ok(cached) => {
+                        debug!("Cache hit for Discord user");
+                        // Clone the response and update source
+                        let mut response = cached.value;
+                        response.source = "cache".to_string();
+                        return Ok(response);
+                    },
+                    Err(_) => {
+                        debug!("Cache miss for Discord user");
+                    }
+                }
+            }
+        }
+        
         debug!("Fetching current user from Discord API: {}", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.auth_headers())
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Discord API request error: {}", e);
-                Error::Unknown(format!("Discord API request error: {}", e))
-            })?;
+        
+        // Initialize the request
+        let mut request = self.client.get(&url);
+        request = request.headers(self.auth_headers());
+        
+        // Add ETag header if available in cache
+        if let Some(cache) = &self.cache {
+            if let Ok(cached_etag) = cache.get::<String, _>(&etag_key).await {
+                let etag = cached_etag.value;
+                debug!("Using cached ETag for user: {}", &etag);
+                request = request.header("If-None-Match", etag);
+            }
+        }
+        
+        let response = request.send().await.map_err(|e| {
+            error!("Discord API request error: {}", e);
+            Error::Unknown(format!("Discord API request error: {}", e))
+        })?;
+        
+        // Check for 304 Not Modified
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            debug!("Discord API returned 304 Not Modified for user");
+            
+            // Return cached data since nothing has changed
+            if let Some(cache) = &self.cache {
+                match cache.get::<CachedResponse<DiscordUser>, _>(&cache_key).await {
+                    Ok(cached) => {
+                        debug!("Using cached data - 304 Not Modified");
+                        let mut response = cached.value;
+                        response.source = "cache".to_string();
+                        return Ok(response);
+                    },
+                    Err(_) => {
+                        debug!("Cache inconsistency - 304 but no cached data");
+                        // Continue to regular request
+                    }
+                }
+            }
+        }
 
         if !response.status().is_success() {
             let status = response.status();
@@ -379,12 +695,57 @@ pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Ve
             return Err(Error::Unknown(format!("Discord API error: {}", status)));
         }
 
+        // Get new ETag if present
+        let new_etag = response.headers()
+            .get("ETag")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+            
         // Parse the response
         let user: DiscordUser = response.json().await.map_err(|e| {
             error!("Failed to parse Discord user response: {}", e);
             Error::Unknown(format!("Failed to parse Discord user response: {}", e))
         })?;
 
-        Ok(user)
+        // Create cached response
+        let cached_response = create_cached_response(user, new_etag.clone());
+
+        // Store in cache if available
+        if let Some(cache) = &self.cache {
+            let ttl = Some(Duration::from_secs(300)); // 5 minute cache TTL
+            
+            if let Err(e) = cache.set_serialized(&cache_key, &cached_response, ttl, false).await {
+                tracing_warn!("Failed to cache Discord user: {}", e);
+            } else {
+                debug!("Cached Discord user for 5 minutes");
+            }
+            
+            // Also store ETag separately
+            if let Some(etag_value) = new_etag {
+                if let Err(e) = cache.set(&etag_key, etag_value, ttl, false).await {
+                    tracing_warn!("Failed to cache Discord user ETag: {}", e);
+                }
+            }
+        }
+
+        Ok(cached_response)
+    }
+    
+    /// Method to invalidate user cache
+    pub async fn invalidate_user_cache(&self) -> Result<(), Error> {
+        if let Some(cache) = &self.cache {
+            let cache_key = format!("discord:user:{}", self.token_hash());
+            let etag_key = format!("discord:user:etag:{}", self.token_hash());
+            
+            debug!("Invalidating user caches");
+            
+            // Just create cache key with very short TTL to effectively invalidate
+            let short_ttl = Some(Duration::from_secs(1));
+            
+            // Ignore errors during cache invalidation
+            let _ = cache.set_serialized(&cache_key, &Vec::<DiscordUser>::new(), short_ttl, true).await;
+            let _ = cache.set(&etag_key, String::new(), short_ttl, true).await;
+        }
+        Ok(())
     }
 }
