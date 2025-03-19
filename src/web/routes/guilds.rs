@@ -77,12 +77,12 @@ async fn list_guilds(
     let discord_service = state.discord_service(session.discord_token.unwrap_or_default());
     let guild_service = GuildService::new(state.database().clone());
     
-    match discord_service.get_current_user_guilds().await {
+    match discord_service.get_current_user_guilds(false).await {
         Ok(discord_guilds) => {
             // Convert Discord guilds to our API format
             let mut guild_infos = Vec::new();
             
-            for discord_guild in discord_guilds {
+            for discord_guild in discord_guilds.data {
                 // Parse the guild ID to check if the bot is in this guild
                 let guild_id = match discord_guild.id.parse::<i64>() {
                     Ok(id) => id,
@@ -222,10 +222,10 @@ async fn get_guild(
     };
     
     // First check if we have this guild in the user's guild list
-    let guild_info = match discord_service.get_current_user_guilds().await {
+    let guild_info = match discord_service.get_current_user_guilds(false).await {
         Ok(guilds) => {
             // Find this specific guild in the list
-            let this_guild = guilds.iter().find(|g| g.id == guild_id);
+            let this_guild = guilds.data.iter().find(|g| g.id == guild_id);
             if let Some(guild) = this_guild {
                 debug!("Found guild {} in user's cached guild list", guild_id);
                 // Return this guild info from the list
@@ -242,14 +242,20 @@ async fn get_guild(
     };
     
     // Get guild details from Discord API - but don't fail if this fails
-    let guild_result = discord_service.get_guild(&guild_id).await;
+    let guild_result = discord_service.get_guild(&guild_id, false).await;
     
     // Get channels only if the bot is in the guild
     let channels_result = if bot_joined {
-        discord_service.get_guild_channels(&guild_id).await
+        discord_service.get_guild_channels(&guild_id, false).await
     } else {
         // Return empty channels if bot is not in the guild
-        Ok(Vec::new())
+        // Create an empty CachedResponse to match the expected return type
+        Ok(crate::web::services::discord::CachedResponse {
+            data: Vec::new(),
+            cached_at: chrono::Utc::now().timestamp(),
+            source: "cache".to_string(),
+            etag: None
+        })
     };
     
     // Handle the response based on available data
@@ -257,19 +263,19 @@ async fn get_guild(
         // Case 1: We successfully got both guild details and channels
         (Ok(guild), Ok(channels)) => {
             // Parse permissions to u64
-            let permissions = u64::from_str_radix(&guild.permissions, 10)
+            let permissions = u64::from_str_radix(&guild.data.permissions, 10)
                 .unwrap_or_default();
             
             // Build icon URL if available
-            let icon_url = guild.icon.as_ref().map(|icon| {
+            let icon_url = guild.data.icon.as_ref().map(|icon| {
                 format!(
                     "https://cdn.discordapp.com/icons/{}/{}.png",
-                    guild.id, icon
+                    guild.data.id, icon
                 )
             });
             
             // Convert channels to our API format
-            let channel_infos: Vec<ChannelInfo> = channels.into_iter()
+            let channel_infos: Vec<ChannelInfo> = channels.data.into_iter()
                 .filter_map(|channel| {
                     // Only include channels that have a name
                     channel.name.as_ref().map(|name| {
@@ -295,10 +301,10 @@ async fn get_guild(
             
             // Build the guild details response
             let guild_details = GuildDetails {
-                id: guild.id,
-                name: guild.name,
+                id: guild.data.id,
+                name: guild.data.name,
                 icon_url,
-                owner: guild.owner.unwrap_or(false),
+                owner: guild.data.owner.unwrap_or(false),
                 permissions,
                 member_count,
                 channels: channel_infos,
@@ -325,7 +331,7 @@ async fn get_guild(
             
             // Get channels from result or empty vec
             let channels = match channels_result {
-                Ok(chans) => chans,
+                Ok(chans) => chans.data,
                 Err(_) => Vec::new(),
             };
             
@@ -450,7 +456,7 @@ async fn update_guild_settings(
 ) -> impl Responder {
     // Get authenticated user from request extensions
     let extensions = req.extensions();
-    let claims = match extensions.get::<Claims>() {
+    let _claims = match extensions.get::<Claims>() {
         Some(claims) => claims,
         None => {
             error!("No authentication claims found in request");

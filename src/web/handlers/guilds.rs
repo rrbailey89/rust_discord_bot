@@ -102,7 +102,7 @@ let guild_service = match state.database().get_client().await {
     };
     
     // Get guild details from Discord API
-    match guild_service.get_guild(&guild_id).await {
+    match guild_service.get_guild(&guild_id, false).await {
         Ok(guild) => {
             // Attempt to fetch member list to get count
             let member_count = if let Ok(members) = guild_service.get_guild_members(&guild_id, 1000).await {
@@ -114,10 +114,10 @@ let guild_service = match state.database().get_client().await {
 
             // Build response object with correct membership status
             let result = json!({
-                "id": guild.id,
-                "name": guild.name,
-                "icon": guild.icon,
-                "features": guild.features,
+                "id": guild.data.id,
+                "name": guild.data.name,
+                "icon": guild.data.icon,
+                "features": guild.data.features,
                 "member_count": member_count,
                 "botJoined": bot_joined
             });

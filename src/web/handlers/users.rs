@@ -63,10 +63,10 @@ pub async fn get_current_user(
             let discord_service = state.discord_service(discord_token);
             
             // Fetch guilds from Discord API (with caching)
-            match discord_service.get_current_user_guilds().await {
+            match discord_service.get_current_user_guilds(false).await {
                 Ok(discord_guilds) => {
                     // Convert to our Guild model
-                    guilds = discord_guilds
+                    guilds = discord_guilds.data
                         .into_iter()
                         .map(|g| {
                             // Convert permissions from string to u64
