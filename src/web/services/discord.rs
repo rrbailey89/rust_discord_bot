@@ -4,7 +4,7 @@
 use crate::error::Error;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn as tracing_warn};
 
 /// Discord Guild representation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +81,10 @@ pub struct DiscordChannel {
     pub topic: Option<String>,
 }
 
+use crate::services::cache::{CacheService, CacheResult};
+use std::sync::Arc;
+use std::time::Duration;
+
 /// Discord API service
 pub struct DiscordService {
     /// HTTP client
@@ -89,6 +93,8 @@ pub struct DiscordService {
     token: String,
     /// API base URL
     api_base: String,
+    /// Cache service (optional)
+    cache: Option<Arc<CacheService>>,
 }
 
 impl DiscordService {
@@ -102,6 +108,21 @@ impl DiscordService {
             client,
             token: token.into(),
             api_base: "https://discord.com/api/v10".to_string(),
+            cache: None,
+        }
+    }
+    
+    /// Create a new Discord API service with caching
+    pub fn new_with_cache(token: impl Into<String>, cache: Arc<CacheService>) -> Self {
+        let client = reqwest::Client::builder()
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self {
+            client,
+            token: token.into(),
+            api_base: "https://discord.com/api/v10".to_string(),
+            cache: Some(cache),
         }
     }
 
@@ -116,8 +137,24 @@ impl DiscordService {
         headers
     }
 
-    /// Get current user's guilds with rate limit handling
+    /// Get current user's guilds with rate limit handling and caching
     pub async fn get_current_user_guilds(&self) -> Result<Vec<DiscordGuild>, Error> {
+        // Check cache first if available
+        if let Some(cache) = &self.cache {
+            let cache_key = format!("discord:guilds:{}", self.token_hash());
+            debug!("Checking cache for key: {}", cache_key);
+            
+            match cache.get::<Vec<DiscordGuild>, _>(&cache_key).await {
+                Ok(cached) => {
+                    debug!("Cache hit for Discord guilds");
+                    return Ok(cached.value);
+                },
+                Err(_) => {
+                    debug!("Cache miss for Discord guilds");
+                }
+            }
+        }
+        
         let url = format!("{}/users/@me/guilds", self.api_base);
         debug!("Fetching guilds from Discord API: {}", url);
 
@@ -142,6 +179,18 @@ impl DiscordService {
                     error!("Failed to parse Discord guilds response: {}", e);
                     Error::Unknown(format!("Failed to parse Discord guilds response: {}", e))
                 })?;
+
+                // Store in cache if available
+                if let Some(cache) = &self.cache {
+                    let cache_key = format!("discord:guilds:{}", self.token_hash());
+                    let ttl = Some(Duration::from_secs(300)); // 5 minute cache TTL
+                    
+                    if let Err(e) = cache.set_serialized(&cache_key, &guilds, ttl, false).await {
+                        tracing_warn!("Failed to cache Discord guilds: {}", e);
+                    } else {
+                        debug!("Cached Discord guilds for 5 minutes");
+                    }
+                }
 
                 return Ok(guilds);
             } else if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -182,6 +231,16 @@ impl DiscordService {
                 return Err(Error::Unknown(format!("Discord API error: {}", status)));
             }
         }
+    }
+    
+    /// Generate a hash of the token for use in cache keys
+    fn token_hash(&self) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        self.token.hash(&mut hasher);
+        format!("{:x}", hasher.finish())
     }
 
     /// Get detailed information about a specific guild

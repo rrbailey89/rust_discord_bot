@@ -73,8 +73,8 @@ async fn list_guilds(
         }
     };
     
-    // Call Discord API to get guilds
-    let discord_service = DiscordService::new(session.discord_token.unwrap_or_default());
+    // Call Discord API to get guilds (with caching)
+    let discord_service = state.discord_service(session.discord_token.unwrap_or_default());
     let guild_service = GuildService::new(state.database().clone());
     
     match discord_service.get_current_user_guilds().await {
@@ -208,8 +208,8 @@ async fn get_guild(
         None => String::new(),
     };
     
-    // Call Discord API to get guild and channels
-    let discord_service = DiscordService::new(discord_token.clone());
+    // Call Discord API to get guild and channels with caching
+    let discord_service = state.discord_service(discord_token.clone());
     let guild_service = GuildService::new(state.database().clone());
     
     // Check if the bot is in this guild
@@ -221,13 +221,13 @@ async fn get_guild(
         }
     };
     
-    // First check if we have this guild in our database to get basic info
-    let guild_info = match auth_service.fetch_discord_guilds(&discord_token).await {
+    // First check if we have this guild in the user's guild list
+    let guild_info = match discord_service.get_current_user_guilds().await {
         Ok(guilds) => {
             // Find this specific guild in the list
             let this_guild = guilds.iter().find(|g| g.id == guild_id);
             if let Some(guild) = this_guild {
-                debug!("Found guild {} in user's guild list", guild_id);
+                debug!("Found guild {} in user's cached guild list", guild_id);
                 // Return this guild info from the list
                 Some(guild.clone())
             } else {

@@ -32,11 +32,24 @@ impl WebAppState {
         &self.bot_data.logging
     }
     
+    /// Get a reference to the cache service
+    pub fn cache(&self) -> &Arc<crate::services::cache::CacheService> {
+        &self.bot_data.cache
+    }
+    
     /// Get a new authentication service
     pub fn auth_service(&self) -> crate::web::services::auth::AuthService {
         crate::web::services::auth::AuthService::new(
             self.database().clone(),
             self.config().web.clone().into()
+        )
+    }
+    
+    /// Get a new Discord service with caching enabled
+    pub fn discord_service(&self, token: impl Into<String>) -> crate::web::services::discord::DiscordService {
+        crate::web::services::discord::DiscordService::new_with_cache(
+            token,
+            self.cache().clone()
         )
     }
 }

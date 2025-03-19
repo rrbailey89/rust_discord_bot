@@ -59,8 +59,11 @@ pub async fn get_current_user(
     
     if let Ok(Some(session)) = auth_service.get_user_session(user_id).await {
         if let Some(discord_token) = &session.discord_token {
-            // Fetch guilds from Discord API
-            match auth_service.fetch_discord_guilds(discord_token).await {
+            // Create Discord service with caching
+            let discord_service = state.discord_service(discord_token);
+            
+            // Fetch guilds from Discord API (with caching)
+            match discord_service.get_current_user_guilds().await {
                 Ok(discord_guilds) => {
                     // Convert to our Guild model
                     guilds = discord_guilds
