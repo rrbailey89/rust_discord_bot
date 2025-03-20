@@ -306,6 +306,7 @@ async fn get_guild(
                 icon_url,
                 owner: guild.data.owner.unwrap_or(false),
                 permissions,
+                bot_joined,
                 member_count,
                 channels: channel_infos,
             };
@@ -367,6 +368,7 @@ async fn get_guild(
                 icon_url,
                 owner: guild.owner.unwrap_or(false),
                 permissions,
+                bot_joined,
                 member_count,
                 channels: channel_infos,
             };
