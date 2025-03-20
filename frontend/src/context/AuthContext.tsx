@@ -149,6 +149,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = () => {
     // Redirect to the Discord OAuth login endpoint
+    // Note: We use the full path here because we're setting window.location.href directly,
+    // not using the api instance which already has the /api prefix
     window.location.href = '/api/auth/login';
   };
 
@@ -169,7 +171,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       let logoutSuccess = false;
       
       try {
-        const response = await api.post('/api/auth/logout');
+        // Note: The 'api' instance already has '/api' as its baseURL,
+        // so we don't need to include it in the path
+        const response = await api.post('/auth/logout');
         console.log('Logout API response:', response.status, response.data);
         logoutSuccess = true;
       } catch (apiError) {

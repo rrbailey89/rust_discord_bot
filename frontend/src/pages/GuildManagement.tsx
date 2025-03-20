@@ -169,7 +169,9 @@ const getInitial = (name: string) => name && name.length > 0 ? name.charAt(0).to
 
 // Fetch guild details
 const fetchGuildDetails = async (guildId: string): Promise<Guild> => {
-  const response = await api.get(`/api/guilds/${guildId}`);
+  // Note: The 'api' instance already has '/api' as its baseURL,
+  // so we don't need to include it in the path
+  const response = await api.get(`/guilds/${guildId}`);
   return response.data;
 };
 
