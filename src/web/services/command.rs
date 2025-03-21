@@ -35,8 +35,8 @@ impl CommandService {
                     name, 
                     description, 
                     category, 
-                    requires_admin,
-                    has_config
+                    false as requires_admin, -- Default value since column doesn't exist yet
+                    coalesce(options IS NOT NULL, false) as has_config
                 FROM commands
                 ORDER BY category, name",
                 &[],
@@ -174,8 +174,8 @@ impl CommandService {
                     name, 
                     description, 
                     category, 
-                    requires_admin,
-                    config_schema
+                    false as requires_admin, -- Default value since column doesn't exist yet
+                    options as config_schema  -- Map options to config_schema
                 FROM commands
                 WHERE command_id = $1",
                 &[&command_id],

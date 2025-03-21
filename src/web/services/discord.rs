@@ -53,8 +53,9 @@ pub struct DiscordGuild {
     /// ID of the guild owner
     #[serde(rename = "owner_id")]
     pub owner_id: Option<String>,
-    /// Permissions for the user in the guild
-    pub permissions: String,
+    /// Permissions for the user in the guild (may be missing when using bot token)
+    #[serde(default)]
+    pub permissions: Option<String>,
     /// Voice region ID (deprecated)
     #[serde(default)]
     pub region: Option<String>,

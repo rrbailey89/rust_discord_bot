@@ -69,8 +69,11 @@ pub async fn get_current_user(
                     guilds = discord_guilds.data
                         .into_iter()
                         .map(|g| {
-                            // Convert permissions from string to u64
-                            let permissions = u64::from_str_radix(&g.permissions, 10).unwrap_or(0);
+                            // Convert permissions from string to u64 (accounting for Option)
+                            let permissions = g.permissions
+                                .as_ref()
+                                .and_then(|p| u64::from_str_radix(p, 10).ok())
+                                .unwrap_or(0);
                             
                             // Create Guild object with full details
                             crate::web::models::auth::Guild {
