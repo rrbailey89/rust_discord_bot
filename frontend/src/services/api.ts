@@ -17,7 +17,7 @@ api.interceptors.request.use(
     if (token) {
       console.log('Adding token to request:', token.substring(0, 10) + '...');
       config.headers = config.headers || {};
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers.Authorization = `Bot ${token}`;
     } else {
       console.log('No token found in localStorage');
     }

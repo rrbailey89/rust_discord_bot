@@ -71,13 +71,12 @@ const CommandToggleSimple: React.FC<CommandToggleProps> = ({
     setIsUpdating(true);
     
     try {
-      // Call the API to update the command settings using the API service
-      // which already has the /api prefix configured
-      const response = await fetch(`/commands/${commandId}/settings?guild_id=${guildId}`, {
+      // Call the API to update the command settings
+      const response = await fetch(`/api/commands/${commandId}/settings?guild_id=${guildId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          'Authorization': `Bot ${localStorage.getItem('auth_token')}`,
         },
         body: JSON.stringify({
           enabled: newEnabledState

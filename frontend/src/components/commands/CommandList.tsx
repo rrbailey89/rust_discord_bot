@@ -177,10 +177,10 @@ const fetchCommands = async (guildId: string): Promise<Command[]> => {
     
     // Call the direct endpoint instead of using the api service
     // to avoid the double /api prefix issue
-    const response = await fetch(`/commands/guild/${guildId}`, {
+    const response = await fetch(`/api/commands/guild/${guildId}`, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'Authorization': `Bot ${localStorage.getItem('auth_token')}`,
       },
     });
     
