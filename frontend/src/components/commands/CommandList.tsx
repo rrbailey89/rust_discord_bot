@@ -188,9 +188,20 @@ const fetchCommands = async (guildId: string): Promise<Command[]> => {
       throw new Error(`API request failed with status ${response.status}`);
     }
     
-    const data = await response.json();
-    console.log("Commands data received:", data);
-    return data;
+    const rawData = await response.json();
+    console.log("Commands data received:", rawData);
+    
+    // Transform the data to match the Command interface
+    const commands = rawData.map((cmd: any) => ({
+      id: cmd.command_id,           // Map command_id to id
+      name: cmd.command_id,         // Use command_id as name since that's what we have
+      description: "No description available",
+      enabled: cmd.enabled || false,
+      category: "Uncategorized",
+      settings: cmd.settings || null,
+    }));
+    
+    return commands;
   } catch (error) {
     console.error("Error fetching commands:", error);
     // Return empty array instead of propagating error
