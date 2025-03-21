@@ -173,10 +173,24 @@ const RetryButton = styled.button`
 // Function to fetch commands from the API
 const fetchCommands = async (guildId: string): Promise<Command[]> => {
   try {
-    // Note: The 'api' instance already has '/api' as its baseURL,
-    // so we don't need to include it in the path
-    const response = await api.get(`/commands/guild/${guildId}`);
-    return response.data;
+    console.log(`Fetching commands for guild ${guildId}`);
+    
+    // Call the direct endpoint instead of using the api service
+    // to avoid the double /api prefix issue
+    const response = await fetch(`/commands/guild/${guildId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log("Commands data received:", data);
+    return data;
   } catch (error) {
     console.error("Error fetching commands:", error);
     // Return empty array instead of propagating error

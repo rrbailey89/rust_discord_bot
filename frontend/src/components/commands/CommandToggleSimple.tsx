@@ -71,8 +71,9 @@ const CommandToggleSimple: React.FC<CommandToggleProps> = ({
     setIsUpdating(true);
     
     try {
-      // Call the API to update the command settings
-      await fetch(`/api/commands/${commandId}/settings?guild_id=${guildId}`, {
+      // Call the API to update the command settings using the API service
+      // which already has the /api prefix configured
+      const response = await fetch(`/commands/${commandId}/settings?guild_id=${guildId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -82,6 +83,11 @@ const CommandToggleSimple: React.FC<CommandToggleProps> = ({
           enabled: newEnabledState
         }),
       });
+      
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+      
       console.log(`Command ${commandId} ${newEnabledState ? 'enabled' : 'disabled'} for guild ${guildId}`);
     } catch (error) {
       console.error(`Failed to update command settings:`, error);
