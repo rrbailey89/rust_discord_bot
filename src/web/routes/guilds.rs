@@ -98,8 +98,10 @@ async fn list_guilds(
                     false
                 });
                 
-                // Parse permissions to u64
-                let permissions = u64::from_str_radix(&discord_guild.permissions, 10)
+                // Parse permissions to u64 if available, otherwise use default
+                let permissions = discord_guild.permissions
+                    .as_ref()
+                    .and_then(|p| u64::from_str_radix(p, 10).ok())
                     .unwrap_or_default();
                 
                 // Build icon URL if available
@@ -264,8 +266,10 @@ async fn get_guild(
     match (guild_result, channels_result) {
         // Case 1: We successfully got both guild details and channels
         (Ok(guild), Ok(channels)) => {
-            // Parse permissions to u64
-            let permissions = u64::from_str_radix(&guild.data.permissions, 10)
+            // Parse permissions to u64 if available, otherwise use default
+            let permissions = guild.data.permissions
+                .as_ref()
+                .and_then(|p| u64::from_str_radix(p, 10).ok())
                 .unwrap_or_default();
             
             // Build icon URL if available
@@ -320,9 +324,11 @@ async fn get_guild(
             error!("Failed to get detailed guild info, using fallback: {}", e);
             let guild = guild_info.unwrap();
             
-            // Parse permissions to u64
-            let permissions = u64::from_str_radix(&guild.permissions, 10)
-                .unwrap_or_default();
+            // Parse permissions to u64 if available
+            let permissions = match &guild.permissions {
+                Some(perms) => u64::from_str_radix(perms, 10).unwrap_or_default(),
+                None => 0,
+            };
             
             // Build icon URL if available
             let icon_url = guild.icon.as_ref().map(|icon| {
