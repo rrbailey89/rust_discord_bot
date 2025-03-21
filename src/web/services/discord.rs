@@ -39,12 +39,50 @@ pub struct DiscordGuild {
     pub name: String,
     /// Guild icon hash
     pub icon: Option<String>,
+    /// Icon hash returned in template object
+    #[serde(rename = "icon_hash", default)]
+    pub icon_hash: Option<String>,
+    /// Splash hash
+    #[serde(default)]
+    pub splash: Option<String>,
+    /// Discovery splash hash
+    #[serde(rename = "discovery_splash", default)]
+    pub discovery_splash: Option<String>,
     /// Whether the user is the owner
     pub owner: Option<bool>,
+    /// ID of the guild owner
+    #[serde(rename = "owner_id")]
+    pub owner_id: Option<String>,
     /// Permissions for the user in the guild
     pub permissions: String,
+    /// Voice region ID (deprecated)
+    #[serde(default)]
+    pub region: Option<String>,
+    /// ID of AFK channel
+    #[serde(rename = "afk_channel_id", default)]
+    pub afk_channel_id: Option<String>,
+    /// AFK timeout in seconds
+    #[serde(rename = "afk_timeout", default)]
+    pub afk_timeout: Option<i32>,
+    /// Widget enabled
+    #[serde(rename = "widget_enabled", default)]
+    pub widget_enabled: Option<bool>,
+    /// Verification level
+    #[serde(rename = "verification_level", default)]
+    pub verification_level: Option<i32>,
     /// Features enabled for the guild
+    #[serde(default)]
     pub features: Vec<String>,
+    /// Approximate member count
+    #[serde(rename = "approximate_member_count", default)]
+    pub approximate_member_count: Option<i32>,
+    /// Approximate presence count
+    #[serde(rename = "approximate_presence_count", default)]
+    pub approximate_presence_count: Option<i32>,
+    
+    // Allow any other fields to be deserialized without errors
+    #[serde(flatten)]
+    pub _extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Discord User representation
@@ -469,11 +507,20 @@ impl DiscordService {
             .and_then(|v| v.to_str().ok())
             .map(String::from);
             
-        // Parse the response
-        let guild: DiscordGuild = response.json().await.map_err(|e| {
-            error!("Failed to parse Discord guild response: {}", e);
-            Error::Unknown(format!("Failed to parse Discord guild response: {}", e))
+        // Get the response body as text first for better error handling
+        let body = response.text().await.map_err(|e| {
+            error!("Failed to read Discord guild response body: {}", e);
+            Error::Unknown(format!("Failed to read Discord guild response body: {}", e))
         })?;
+        
+        // Try to parse the JSON body with detailed error reporting
+        let guild: DiscordGuild = match serde_json::from_str(&body) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                error!("Failed to parse Discord guild response: {}, Body: {}", e, body);
+                return Err(Error::Unknown(format!("Failed to parse Discord guild response: {}", e)));
+            }
+        };
 
         // Create cached response
         let cached_response = create_cached_response(guild, new_etag.clone());

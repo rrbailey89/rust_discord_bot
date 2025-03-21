@@ -15,7 +15,7 @@ WORKDIR /usr/src/app
 COPY . .
 # Copy the built frontend files to the static directory
 COPY --from=frontend-builder /usr/src/static /usr/src/app/static
-RUN cargo build --release
+RUN RUSTFLAGS="-A warnings" cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim

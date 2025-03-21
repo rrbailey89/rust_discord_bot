@@ -31,7 +31,7 @@ impl CommandService {
         let rows = client
             .query(
                 "SELECT 
-                    id, 
+                    command_id, 
                     name, 
                     description, 
                     category, 
@@ -104,7 +104,7 @@ impl CommandService {
         // Check if the command exists
         let command_exists = client
             .query_one(
-                "SELECT 1 FROM commands WHERE id = $1 LIMIT 1",
+                "SELECT 1 FROM commands WHERE command_id = $1 LIMIT 1",
                 &[&command_id],
             )
             .await
@@ -177,7 +177,7 @@ impl CommandService {
                     requires_admin,
                     config_schema
                 FROM commands
-                WHERE id = $1",
+                WHERE command_id = $1",
                 &[&command_id],
             )
             .await?;
