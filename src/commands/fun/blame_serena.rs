@@ -39,16 +39,27 @@ pub async fn blame(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    // Get Serena's ID safely, with a fallback to hardcoded ID
+    // Determine Serena's ID with multiple fallbacks to ensure robustness
     let serena_id = match ctx.data().config.bot.serena_user_id.parse::<u64>() {
         Ok(id) => UserId::new(id),
         Err(e) => {
-            // Log the error and use hardcoded ID
-            tracing::error!("Failed to parse Serena user ID: {}", e);
+            // Log the error and try the hardcoded ID
+            tracing::error!("Failed to parse Serena user ID from config: {}", e);
+            // Default to a hardcoded value for Serena
             UserId::new(803867382447079485) // Hardcoded Serena's ID
         }
     };
-    let blamed_user = user.unwrap_or(serena_id);
+    
+    // For the blame command, we need a target
+    // If no user is specified, we default to Serena
+    // If that fails somehow, the command will fail with an error message
+    let blamed_user = match user {
+        Some(target_user) => target_user,
+        None => {
+            // No user specified, use Serena as the fallback target
+            serena_id
+        }
+    };
     let (serena_blame_count, user_blame_count) = ctx.data().database.increment_blame_count(blamed_user.get() as i64).await?;
 
     let (prefix, reason_text) = reason.map(|r| r.format()).unwrap_or(("", ""));
