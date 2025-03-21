@@ -232,4 +232,40 @@ impl CommandService {
 
         Ok(result)
     }
+    
+    /// Initialize command settings for a guild
+    /// This ensures that all commands have entries in the guild_command_settings table
+    pub async fn initialize_guild_command_settings(&self, guild_id: i64) -> Result<(), Error> {
+        let client = self.db.get_client().await?;
+        
+        // Get all available commands
+        let commands = self.get_available_commands().await?;
+        
+        // For each command, check if settings exist, if not insert defaults
+        for command in commands {
+            let exists = client
+                .query_one(
+                    "SELECT 1 FROM guild_command_settings 
+                     WHERE guild_id = $1 AND command_id = $2 LIMIT 1",
+                    &[&guild_id, &command.id],
+                )
+                .await.is_ok();
+                
+            if !exists {
+                info!("Initializing settings for command {} in guild {}", command.id, guild_id);
+                client
+                    .execute(
+                        "INSERT INTO guild_command_settings 
+                         (guild_id, command_id, enabled, settings)
+                         VALUES ($1, $2, $3, $4)
+                         ON CONFLICT (guild_id, command_id) DO NOTHING",
+                        &[&guild_id, &command.id, &true, &None::<serde_json::Value>],
+                    )
+                    .await?;
+            }
+        }
+        
+        info!("Initialized command settings for guild {}", guild_id);
+        Ok(())
+    }
 }

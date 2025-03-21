@@ -39,7 +39,15 @@ pub async fn blame(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    let serena_id = UserId::new(ctx.data().config.bot.serena_user_id.parse().unwrap());
+    // Get Serena's ID safely, with a fallback to hardcoded ID
+    let serena_id = match ctx.data().config.bot.serena_user_id.parse::<u64>() {
+        Ok(id) => UserId::new(id),
+        Err(e) => {
+            // Log the error and use hardcoded ID
+            tracing::error!("Failed to parse Serena user ID: {}", e);
+            UserId::new(803867382447079485) // Hardcoded Serena's ID
+        }
+    };
     let blamed_user = user.unwrap_or(serena_id);
     let (serena_blame_count, user_blame_count) = ctx.data().database.increment_blame_count(blamed_user.get() as i64).await?;
 

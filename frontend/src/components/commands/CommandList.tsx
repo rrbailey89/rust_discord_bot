@@ -309,7 +309,7 @@ const CommandList: React.FC<CommandListProps> = ({ onOpenSettings }) => {
                 {commandsByCategory[category].map(command => (
                   <CommandCard key={command.id}>
                     <CommandHeader>
-                      <CommandName>{command.name}</CommandName>
+                      <CommandName>{command.name || 'Unnamed Command'}</CommandName>
                       <CommandToggleSimple
                         commandId={command.id}
                         guildId={guildId!}
@@ -317,7 +317,7 @@ const CommandList: React.FC<CommandListProps> = ({ onOpenSettings }) => {
                       />
                     </CommandHeader>
                     <CommandDescription>
-                      {command.description}
+                      {command.description || 'No description available'}
                     </CommandDescription>
                     <CommandActions>
                       <div></div>

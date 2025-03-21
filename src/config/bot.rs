@@ -15,7 +15,11 @@ impl BotConfig {
         Ok(Self {
             bot_token: env::var("BOT_TOKEN").unwrap_or_else(|_| String::from("")),
             command_prefix: env::var("COMMAND_PREFIX").unwrap_or_else(|_| String::from("!")),
-            serena_user_id: env::var("SERENA_USER_ID").unwrap_or_else(|_| String::from("")),
+            serena_user_id: env::var("SERENA_USER_ID").unwrap_or_else(|_| {
+                // Set Serena's ID as default
+                tracing::warn!("SERENA_USER_ID not set, using hardcoded default");
+                String::from("803867382447079485")  // Serena's ID
+            }),
         })
     }
 }

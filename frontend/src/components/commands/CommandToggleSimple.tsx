@@ -58,14 +58,39 @@ interface CommandToggleProps {
 }
 
 const CommandToggleSimple: React.FC<CommandToggleProps> = ({
+  commandId, 
+  guildId,
   initialEnabled,
 }) => {
   const [enabled, setEnabled] = useState(initialEnabled);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  const handleToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newEnabledState = e.target.checked;
     setEnabled(newEnabledState);
-    // In a real component, we would call an API here to update the state
+    setIsUpdating(true);
+    
+    try {
+      // Call the API to update the command settings
+      await fetch(`/api/commands/${commandId}/settings?guild_id=${guildId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+        body: JSON.stringify({
+          enabled: newEnabledState
+        }),
+      });
+      console.log(`Command ${commandId} ${newEnabledState ? 'enabled' : 'disabled'} for guild ${guildId}`);
+    } catch (error) {
+      console.error(`Failed to update command settings:`, error);
+      // Revert UI state on failure
+      setEnabled(!newEnabledState);
+      alert('Failed to update command settings. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (

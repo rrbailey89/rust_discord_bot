@@ -67,6 +67,17 @@ async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Resul
 
     // Store guild channels in the database
     data.database.store_guild_channels(guild).await?;
+    
+    // Initialize command settings for this guild
+    let command_service = crate::web::services::CommandService::new(data.database.clone());
+    match command_service.initialize_guild_command_settings(guild.id.get() as i64).await {
+        Ok(_) => {
+            tracing::info!("Initialized command settings for guild {}", guild.id);
+        },
+        Err(e) => {
+            tracing::error!("Failed to initialize command settings for guild {}: {}", guild.id, e);
+        }
+    }
 
     // Additionally, fetch and store the guild members.
     // We'll do this in a separate task to avoid blocking.
