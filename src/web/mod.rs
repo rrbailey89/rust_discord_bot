@@ -7,7 +7,7 @@ mod middleware;
 mod routes;
 mod handlers;
 mod models;
-mod services;
+pub mod services;
 
 pub use server::start_server;
 pub use state::WebAppState;
