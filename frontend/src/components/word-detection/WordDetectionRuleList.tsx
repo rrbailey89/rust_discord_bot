@@ -277,8 +277,16 @@ const formatDate = (dateString: string) => {
 
 // Function to fetch word detection rules
 const fetchWordDetectionRules = async (guildId: string): Promise<WordDetectionRule[]> => {
-  const response = await api.get(`/api/guilds/${guildId}/word-detection`);
-  return response.data;
+  try {
+    // Note: The 'api' instance already has '/api' as its baseURL,
+    // so we don't need to include it in the path
+    const response = await api.get(`/word_detection/rules/${guildId}`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching word detection rules:", error);
+    // Return empty array instead of propagating error
+    return [];
+  }
 };
 
 // Function to delete a rule
@@ -287,7 +295,12 @@ const deleteWordDetectionRule = async (params: {
   ruleId: number;
 }): Promise<void> => {
   const { guildId, ruleId } = params;
-  await api.delete(`/api/guilds/${guildId}/word-detection/${ruleId}`);
+  try {
+    await api.delete(`/word_detection/rules/${guildId}/${ruleId}`);
+  } catch (error) {
+    console.error("Error deleting rule:", error);
+    throw error; // We still throw here since the UI handles this error
+  }
 };
 
 interface WordDetectionRuleListProps {

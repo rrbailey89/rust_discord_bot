@@ -175,11 +175,18 @@ const updateCommandSettings = async (params: {
   commandId: string;
   settings: Record<string, any>;
 }): Promise<Command> => {
-  const { guildId, commandId, settings } = params;
-  const response = await api.put(`/api/guilds/${guildId}/commands/${commandId}/settings`, {
-    settings,
-  });
-  return response.data;
+  try {
+    // Note: The 'api' instance already has '/api' as its baseURL,
+    // so we don't need to include it in the path
+    const { guildId, commandId, settings } = params;
+    const response = await api.put(`/commands/${commandId}/settings?guild_id=${guildId}`, {
+      settings,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error updating command settings:", error);
+    throw error;
+  }
 };
 
 // Helper to get nested value

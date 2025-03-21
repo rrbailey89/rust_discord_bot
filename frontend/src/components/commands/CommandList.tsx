@@ -172,8 +172,16 @@ const RetryButton = styled.button`
 
 // Function to fetch commands from the API
 const fetchCommands = async (guildId: string): Promise<Command[]> => {
-  const response = await api.get(`/api/guilds/${guildId}/commands`);
-  return response.data;
+  try {
+    // Note: The 'api' instance already has '/api' as its baseURL,
+    // so we don't need to include it in the path
+    const response = await api.get(`/commands/guild/${guildId}`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching commands:", error);
+    // Return empty array instead of propagating error
+    return [];
+  }
 };
 
 // Group commands by category

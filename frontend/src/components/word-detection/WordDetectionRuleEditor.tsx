@@ -201,13 +201,20 @@ const createWordDetectionRule = async (params: {
   action: string;
   action_params: Record<string, any>;
 }): Promise<WordDetectionRule> => {
-  const { guildId, pattern, action, action_params } = params;
-  const response = await api.post(`/api/guilds/${guildId}/word-detection`, {
-    pattern,
-    action,
-    action_params,
-  });
-  return response.data;
+  try {
+    // Note: The 'api' instance already has '/api' as its baseURL,
+    // so we don't need to include it in the path
+    const { guildId, pattern, action, action_params } = params;
+    const response = await api.post(`/word_detection/rules/${guildId}`, {
+      pattern,
+      action,
+      action_params,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error creating word detection rule:", error);
+    throw error;
+  }
 };
 
 // Function to update an existing rule
@@ -218,13 +225,20 @@ const updateWordDetectionRule = async (params: {
   action: string;
   action_params: Record<string, any>;
 }): Promise<WordDetectionRule> => {
-  const { guildId, ruleId, pattern, action, action_params } = params;
-  const response = await api.put(`/api/guilds/${guildId}/word-detection/${ruleId}`, {
-    pattern,
-    action,
-    action_params,
-  });
-  return response.data;
+  try {
+    // Note: The 'api' instance already has '/api' as its baseURL,
+    // so we don't need to include it in the path
+    const { guildId, ruleId, pattern, action, action_params } = params;
+    const response = await api.put(`/word_detection/rules/${guildId}/${ruleId}`, {
+      pattern,
+      action,
+      action_params,
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error updating word detection rule:", error);
+    throw error;
+  }
 };
 
 const WordDetectionRuleEditor: React.FC<WordDetectionRuleEditorProps> = ({

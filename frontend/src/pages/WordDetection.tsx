@@ -119,8 +119,15 @@ const RetryButton = styled.button`
 
 // Fetch guild details
 const fetchGuildDetails = async (guildId: string): Promise<Guild> => {
-  const response = await api.get(`/api/guilds/${guildId}`);
-  return response.data;
+  try {
+    // Note: The 'api' instance already has '/api' as its baseURL,
+    // so we don't need to include it in the path
+    const response = await api.get(`/guilds/${guildId}`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching guild details:", error);
+    throw error;
+  }
 };
 
 const WordDetection: React.FC = () => {
