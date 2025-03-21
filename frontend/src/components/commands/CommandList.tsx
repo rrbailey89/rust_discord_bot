@@ -223,8 +223,8 @@ const CommandList: React.FC<CommandListProps> = ({ onOpenSettings }) => {
   
   // Filter commands based on search term
   const filteredCommands = commands?.filter(command => 
-    command.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    command.description.toLowerCase().includes(searchTerm.toLowerCase())
+    (command.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (command.description?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   ) || [];
   
   // Handle toggle click
