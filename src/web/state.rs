@@ -45,10 +45,19 @@ impl WebAppState {
         )
     }
     
-    /// Get a new Discord service with caching enabled
+    /// Get a new Discord service with user token and caching enabled
     pub fn discord_service(&self, token: impl Into<String>) -> crate::web::services::discord::DiscordService {
         crate::web::services::discord::DiscordService::new_with_cache(
             token,
+            self.cache().clone()
+        )
+    }
+    
+    /// Get a new Discord service with bot token and caching enabled
+    pub fn discord_bot_service(&self) -> crate::web::services::discord::DiscordService {
+        // Use the bot token from config
+        crate::web::services::discord::DiscordService::new_bot_with_cache(
+            self.config().bot.bot_token.clone(),
             self.cache().clone()
         )
     }

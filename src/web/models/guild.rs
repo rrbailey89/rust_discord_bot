@@ -65,8 +65,18 @@ pub struct ChannelInfo {
 /// Guild settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuildSettings {
+    /// Guild ID
+    pub guild_id: i64,
+    /// Custom command prefix for this guild
+    pub prefix: Option<String>,
+    /// Moderator role ID
+    pub mod_role_id: Option<i64>,
+    /// Admin role ID
+    pub admin_role_id: Option<i64>,
+    /// Custom settings as JSON
+    pub settings: Option<serde_json::Value>,
     /// Whether emoji reactions are enabled
-    pub emoji_reactions_enabled: bool,
+    pub emoji_reactions_enabled: Option<bool>,
     /// Channel ID for level up notifications
     pub level_up_channel_id: Option<String>,
     /// Channel ID for warning notifications
@@ -82,6 +92,14 @@ pub struct GuildSettings {
 /// Request to update guild settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateGuildSettingsRequest {
+    /// Custom command prefix for this guild
+    pub prefix: Option<String>,
+    /// Moderator role ID
+    pub mod_role_id: Option<i64>,
+    /// Admin role ID
+    pub admin_role_id: Option<i64>,
+    /// Custom settings as JSON
+    pub settings: Option<serde_json::Value>,
     /// Whether emoji reactions are enabled
     pub emoji_reactions_enabled: Option<bool>,
     /// Channel ID for level up notifications

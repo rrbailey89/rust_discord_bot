@@ -346,16 +346,26 @@ async fn list_guild_commands(
         }));
     }
     
-    // Get all command settings for this guild
+    // Get all command settings for this guild with error handling for missing table
     match command_service.get_all_command_settings(guild_id).await {
         Ok(settings) => {
             HttpResponse::Ok().json(settings)
         },
         Err(e) => {
-            error!("Error getting all command settings: {}", e);
-            HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": format!("Failed to retrieve command settings: {}", e)
-            }))
+            let error_string = e.to_string();
+            
+            // Special handling for the case where the table doesn't exist yet
+            if error_string.contains("relation \"commands\" does not exist") {
+                error!("Database error: Table commands does not exist yet");
+                
+                // Return empty array since commands aren't defined yet
+                HttpResponse::Ok().json(serde_json::json!([]))
+            } else {
+                error!("Error getting all command settings: {}", e);
+                HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": format!("Failed to retrieve command settings: {}", e)
+                }))
+            }
         }
     }
 }

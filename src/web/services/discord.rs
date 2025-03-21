@@ -109,12 +109,23 @@ use crate::services::cache::{CacheService, CacheResult};
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Token type for Discord API requests
+#[derive(Debug, Clone, Copy)]
+pub enum TokenType {
+    /// User token (OAuth2) - uses "Bearer" prefix
+    User,
+    /// Bot token - uses "Bot" prefix
+    Bot
+}
+
 /// Discord API service
 pub struct DiscordService {
     /// HTTP client
     client: reqwest::Client,
     /// Discord token
     token: String,
+    /// Token type (User or Bot)
+    token_type: TokenType,
     /// API base URL
     api_base: String,
     /// Cache service (optional)
@@ -122,7 +133,7 @@ pub struct DiscordService {
 }
 
 impl DiscordService {
-    /// Create a new Discord API service
+    /// Create a new Discord API service with user token (OAuth2)
     pub fn new(token: impl Into<String>) -> Self {
         let client = reqwest::Client::builder()
             .build()
@@ -131,12 +142,28 @@ impl DiscordService {
         Self {
             client,
             token: token.into(),
+            token_type: TokenType::User,
             api_base: "https://discord.com/api/v10".to_string(),
             cache: None,
         }
     }
     
-    /// Create a new Discord API service with caching
+    /// Create a new Discord API service with bot token
+    pub fn new_bot(token: impl Into<String>) -> Self {
+        let client = reqwest::Client::builder()
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self {
+            client,
+            token: token.into(),
+            token_type: TokenType::Bot,
+            api_base: "https://discord.com/api/v10".to_string(),
+            cache: None,
+        }
+    }
+    
+    /// Create a new Discord API service with user token and caching
     pub fn new_with_cache(token: impl Into<String>, cache: Arc<CacheService>) -> Self {
         let client = reqwest::Client::builder()
             .build()
@@ -145,17 +172,40 @@ impl DiscordService {
         Self {
             client,
             token: token.into(),
+            token_type: TokenType::User,
+            api_base: "https://discord.com/api/v10".to_string(),
+            cache: Some(cache),
+        }
+    }
+    
+    /// Create a new Discord API service with bot token and caching
+    pub fn new_bot_with_cache(token: impl Into<String>, cache: Arc<CacheService>) -> Self {
+        let client = reqwest::Client::builder()
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self {
+            client,
+            token: token.into(),
+            token_type: TokenType::Bot,
             api_base: "https://discord.com/api/v10".to_string(),
             cache: Some(cache),
         }
     }
 
-    /// Create authorization headers with the token
+    /// Create authorization headers with the token using the appropriate prefix
     fn auth_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
+        
+        // Use different prefix based on token type
+        let auth_value = match self.token_type {
+            TokenType::User => format!("Bearer {}", self.token),
+            TokenType::Bot => format!("Bot {}", self.token),
+        };
+        
         headers.insert(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", self.token))
+            HeaderValue::from_str(&auth_value)
                 .expect("Invalid header value"),
         );
         headers

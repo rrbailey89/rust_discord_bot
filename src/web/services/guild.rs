@@ -36,9 +36,14 @@ impl GuildService {
             )
             .await?;
 
-        // Map the result to a GuildSettings object
+        // Map the result to a GuildSettings object with all required fields
         let settings = GuildSettings {
-            emoji_reactions_enabled: row.get::<_, bool>(0),
+            guild_id: guild_id,
+            prefix: None,
+            mod_role_id: None,
+            admin_role_id: None,
+            settings: None,
+            emoji_reactions_enabled: Some(row.get::<_, bool>(0)),
             level_up_channel_id: row.get::<_, Option<String>>(1),
             warn_channel_id: row.get::<_, Option<String>>(2),
             url_rule: row.get::<_, Option<String>>(3),

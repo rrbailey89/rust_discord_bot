@@ -208,8 +208,9 @@ async fn get_guild(
         None => String::new(),
     };
     
-    // Call Discord API to get guild and channels with caching
-    let discord_service = state.discord_service(discord_token.clone());
+    // Call Discord API to get guild and channels
+    // Use bot token for guild details as it needs elevated permissions
+    let discord_service = state.discord_bot_service();
     let guild_service = GuildService::new(state.database().clone());
     
     // Check if the bot is in this guild
@@ -241,11 +242,12 @@ async fn get_guild(
         }
     };
     
-    // Get guild details from Discord API - but don't fail if this fails
+    // Get guild details from Discord API using bot token
     let guild_result = discord_service.get_guild(&guild_id, false).await;
     
     // Get channels only if the bot is in the guild
     let channels_result = if bot_joined {
+        // Channels also require bot permissions
         discord_service.get_guild_channels(&guild_id, false).await
     } else {
         // Return empty channels if bot is not in the guild
@@ -435,16 +437,40 @@ async fn get_guild_settings(
         }));
     }
     
-    // Get settings from database
+    // Get settings from database with error handling for missing table
     match guild_service.get_guild_settings(guild_id_i64).await {
         Ok(settings) => {
             HttpResponse::Ok().json(settings)
         },
         Err(e) => {
-            error!("Database error: {}", e);
-            HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": "Failed to retrieve guild settings"
-            }))
+            let error_string = e.to_string();
+            
+            // Special handling for the case where the table doesn't exist yet
+            if error_string.contains("relation \"guild_settings\" does not exist") {
+                error!("Database error: Table guild_settings does not exist yet");
+                
+                // Return empty default settings with all required fields
+                let default_settings = crate::web::models::guild::GuildSettings {
+                    guild_id: guild_id_i64,
+                    prefix: None,
+                    mod_role_id: None,
+                    admin_role_id: None,
+                    settings: None,
+                    emoji_reactions_enabled: Some(true),  // Enable emoji reactions by default
+                    level_up_channel_id: None,
+                    warn_channel_id: None,
+                    url_rule: None,
+                    delete_log_channel_id: None,
+                    reaction_log_channel_id: None,
+                };
+                
+                HttpResponse::Ok().json(default_settings)
+            } else {
+                error!("Database error: {}", e);
+                HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": "Failed to retrieve guild settings"
+                }))
+            }
         }
     }
 }
