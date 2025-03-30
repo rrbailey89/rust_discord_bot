@@ -272,7 +272,7 @@ async fn main() -> Result<(), Error> {
     let command_registry = Arc::new(
         crate::services::command_registry::CommandRegistryService::new(
             database.clone(),
-            Arc::new(serenity::Http::new(&config.bot.bot_token)),
+            Arc::new(serenity::Http::new(&config.bot.bot_token.clone())),
         )
     );
     info!("Command registry service initialized");
@@ -337,6 +337,8 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
     info!("Starting Discord bot");
     
     let config_clone = app_data.config.as_ref().clone();
+    // Clone the bot token separately to avoid move issues later
+    let bot_token_clone = config_clone.bot.bot_token.clone();
     let app_data_for_setup = app_data.clone();
     // Create a cloned Data for framework setup
     let data_for_framework = (*app_data).clone();
@@ -426,7 +428,7 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                 if let Some(app_id) = &config_clone.bot.application_id {
                     // Create a separate Discord service for API operations
                     let discord_service = web::services::discord::DiscordService::new_bot(
-                        config_clone.bot.bot_token.to_string(), 
+                        config_clone.bot.bot_token.clone(), 
                         Some(app_id.clone())
                     );
                     
@@ -467,7 +469,7 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
         .build();
 
     let mut client = serenity::ClientBuilder::new(
-        &config_clone.bot.bot_token,
+        &bot_token_clone,
         GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT,
     )
         .framework(framework)
