@@ -72,7 +72,7 @@ const CommandToggleSimple: React.FC<CommandToggleProps> = ({
     
     try {
       // Call the API to update the command settings
-      const response = await fetch(`/api/commands/${commandId}/settings?guild_id=${guildId}`, {
+      const response = await fetch(`/api/commands/${commandId || 'unknown'}/settings?guild_id=${guildId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

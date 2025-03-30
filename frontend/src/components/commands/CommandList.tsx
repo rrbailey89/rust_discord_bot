@@ -193,8 +193,8 @@ const fetchCommands = async (guildId: string): Promise<Command[]> => {
     
     // Transform the data to match the Command interface
     const commands = rawData.map((cmd: any) => ({
-      id: cmd.command_id,           // Map command_id to id
-      name: cmd.command_id,         // Use command_id as name since that's what we have
+            id: cmd.command_id || "unknown",  // Map command_id to id and provide fallback
+            name: cmd.command_id || "unknown", // Use command_id as name since that's what we have
       description: "No description available",
       enabled: cmd.enabled || false,
       category: "Uncategorized",
