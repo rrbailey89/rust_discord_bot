@@ -404,10 +404,55 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
             let app_data_clone = app_data_for_setup.clone();
             
             Box::pin(async move {
-                // Register all commands globally
-                let commands = commands::get_commands();
-                poise::builtins::register_globally(ctx, &commands).await?;
-                info!("Registered {} commands with Discord", commands.len());
+                // Get all commands
+                let all_commands = commands::get_commands();
+                
+                // Get the list of all command names that should be global
+                let command_configs = commands::get_command_config();
+                let global_command_names: Vec<&str> = command_configs.iter()
+                    .filter_map(|(name, config)| {
+                        if config.scope == commands::CommandScope::Global {
+                            Some(*name)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                
+                info!("Found {} commands to register globally: {:?}", 
+                    global_command_names.len(), global_command_names);
+                
+                // First, check if we need to clear existing global commands
+                if let Some(app_id) = &config_clone.bot.application_id {
+                    // Create a separate Discord service for API operations
+                    let discord_service = web::services::discord::DiscordService::new_bot(
+                        config_clone.bot.bot_token.to_string(), 
+                        Some(app_id.clone())
+                    );
+                    
+                    // Clean up any existing global commands that shouldn't be there
+                    if let Err(e) = discord_service.clear_global_commands().await {
+                        error!("Failed to clear global commands: {}", e);
+                    } else {
+                        info!("Successfully cleared existing global commands");
+                    }
+                }
+                
+                // Filter the commands to just those marked as global
+                // First, create a new Vec of commands (not references)
+                let global_commands: Vec<_> = all_commands.into_iter()
+                    .filter(|cmd| {
+                        let name = cmd.name.as_str();
+                        global_command_names.contains(&name)
+                    })
+                    .collect();
+                
+                if !global_commands.is_empty() {
+                    poise::builtins::register_globally(ctx, &global_commands).await?;
+                    info!("Registered {} global commands with Discord (ping, help, blame)", global_commands.len());
+                } else {
+                    warn!("No global commands found to register");
+                }
                 
                 // Insert Data into TypeMap
                 {
