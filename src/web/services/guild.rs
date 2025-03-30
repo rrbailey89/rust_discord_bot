@@ -4,6 +4,7 @@
 use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::guild::{GuildSettings, UpdateGuildSettingsRequest};
+use crate::web::models::auth::Guild;
 use tracing::{debug, error, info};
 
 /// Guild service for database operations
@@ -235,5 +236,51 @@ impl GuildService {
                     Ok(0) // Return 0 instead of propagating the error
                 }
             }
+    }
+
+    /// Get all guilds where the bot is a member
+    pub async fn get_guilds(&self) -> Result<Vec<Guild>, Error> {
+        let client = self.db.get_client().await?;
+        
+        // Query all guilds from the database where the bot is a member
+        let rows = client
+            .query(
+                "SELECT 
+                    g.guild_id, 
+                    g.name, 
+                    g.icon_hash,
+                    g.owner_id
+                FROM guild_info g
+                WHERE EXISTS (
+                    SELECT 1 FROM guild_members 
+                    WHERE guild_id = g.guild_id 
+                    LIMIT 1
+                )
+                ORDER BY g.name",
+                &[],
+            )
+            .await?;
+        
+        // Manually create the guild vector
+        let mut guilds = Vec::new();
+        
+        for row in rows.iter() {
+            let guild_id = row.get::<_, i64>(0);
+            let guild_name = row.get::<_, String>(1);
+            let icon_hash = row.get::<_, Option<String>>(2);
+            let owner_id = row.get::<_, Option<i64>>(3);
+            
+            guilds.push(Guild {
+                id: guild_id.to_string(),
+                name: guild_name,
+                icon: icon_hash,
+                owner: owner_id.is_some(),
+                permissions: 0, // Default permissions 
+                bot_joined: true,
+            });
+        }
+        
+        info!("Retrieved {} guilds where bot is a member", guilds.len());
+        Ok(guilds)
     }
 }

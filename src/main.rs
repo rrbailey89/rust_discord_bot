@@ -37,6 +37,8 @@ pub struct Data {
     pub start_time: Arc<Instant>,
     pub task_manager: Arc<crate::services::task_manager::TaskManager>,
     pub rate_limiter: Arc<crate::services::rate_limiter::RateLimiter>,
+    pub command_registry: Arc<crate::services::command_registry::CommandRegistryService>,
+    pub command_cooldown: Arc<crate::services::command_cooldown::CommandCooldownService>,
 }
 
 async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Result<(), Error> {
@@ -245,6 +247,23 @@ async fn main() -> Result<(), Error> {
     let rate_limiter = Arc::new(crate::services::RateLimiter::new());
     info!("Rate limiter initialized");
     
+    // Initialize command registry service
+    let command_registry = Arc::new(
+        crate::services::command_registry::CommandRegistryService::new(
+            database.clone(),
+            Arc::new(serenity::Http::new(&config.bot.bot_token)),
+        )
+    );
+    info!("Command registry service initialized");
+    
+    // Initialize command cooldown service
+    let command_cooldown = Arc::new(
+        crate::services::command_cooldown::CommandCooldownService::new(
+            database.clone(),
+        )
+    );
+    info!("Command cooldown service initialized");
+    
     // Create shared app data wrapped in Arc
     let app_data = Arc::new(Data {
         config: Arc::new(config.clone()),
@@ -256,6 +275,8 @@ async fn main() -> Result<(), Error> {
         start_time: start_time.clone(),
         task_manager: task_manager.clone(),
         rate_limiter: rate_limiter.clone(),
+        command_registry: command_registry.clone(),
+        command_cooldown: command_cooldown.clone(),
     });
     
     // Set up global data access
@@ -299,6 +320,10 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
     // Create a cloned Data for framework setup
     let data_for_framework = (*app_data).clone();
 
+    // We'll use the existing registry and cooldown services from app_data
+    let _command_registry = app_data.command_registry.clone();
+    let _command_cooldown = app_data.command_cooldown.clone();
+
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: commands::get_commands(),
@@ -310,17 +335,24 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                 case_insensitive_commands: true,
                 ..Default::default()
             },
+            // Skip the custom pre-command handler for now to avoid compilation issues
             event_handler: |ctx, event, framework, data| {
-                Box::pin(events::handle_event(ctx, event, framework, data))
+                Box::pin(async move {
+                    // Just pass through to the existing event handler
+                    events::handle_event(ctx, event, framework, data).await
+                })
             },
             ..Default::default()
         })
-        .setup(move |ctx, _ready, framework| {
+        .setup(move |ctx, _ready, _framework| {
             let app_data_clone = app_data_for_setup.clone();
             
             Box::pin(async move {
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-
+                // Register all commands globally
+                let commands = commands::get_commands();
+                poise::builtins::register_globally(ctx, &commands).await?;
+                info!("Registered {} commands with Discord", commands.len());
+                
                 // Insert Data into TypeMap
                 {
                     let mut data_map = ctx.data.write().await;
