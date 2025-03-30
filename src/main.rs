@@ -40,6 +40,9 @@ pub struct Data {
 }
 
 async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Result<(), Error> {
+    let start_time = std::time::Instant::now();
+    let mut reminders_sent = 0;
+    
     // Use TimedOperation to measure database query duration
     let due_reminders = {
         let _timer = crate::services::TimedOperation::for_db_query(
@@ -49,22 +52,93 @@ async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Resul
         data.database.get_due_reminders().await?
     };
 
-    if !due_reminders.is_empty() {
+    let reminder_count = due_reminders.len();
+    
+    if reminder_count > 0 {
         data.logging.log_command_execution(
             "check_reminders", 
             None, 
             None
         );
-        tracing::info!("Processing {} due reminders", due_reminders.len());
+        tracing::info!("Processing {} due reminders", reminder_count);
     }
 
     for reminder in due_reminders {
         let channel = ChannelId::new(reminder.channel_id as u64);
         let content = reminder.message.clone();
 
-        if let Ok(_) = channel.send_message(&ctx.http, CreateMessage::new().content(&content)).await {
-            data.database.update_reminder_last_sent(reminder.id).await?;
+        match channel.send_message(&ctx.http, CreateMessage::new().content(&content)).await {
+            Ok(_) => {
+                data.database.update_reminder_last_sent(reminder.id).await?;
+                reminders_sent += 1;
+            },
+            Err(e) => {
+                tracing::warn!("Failed to send reminder to channel {}: {}", 
+                     reminder.channel_id, e);
+            }
         }
+    }
+    
+    // Log metrics
+    let elapsed = start_time.elapsed();
+    if reminders_sent > 0 || reminder_count > 0 {
+        tracing::info!("Reminder check completed: {}/{} reminders sent in {:?}", 
+             reminders_sent, reminder_count, elapsed);
+    } else {
+        tracing::debug!("Reminder check completed: No due reminders found ({:?})", elapsed);
+    }
+
+    Ok(())
+}
+
+// Helper function to check and send reminders using just the HTTP client
+async fn check_and_send_reminders_http(http: &serenity::Http, data: &Data) -> Result<(), Error> {
+    let start_time = std::time::Instant::now();
+    let mut reminders_sent = 0;
+    
+    // Use TimedOperation to measure database query duration
+    let due_reminders = {
+        let _timer = crate::services::TimedOperation::for_db_query(
+            "get_due_reminders", 
+            data.logging.clone()
+        );
+        data.database.get_due_reminders().await?
+    };
+
+    let reminder_count = due_reminders.len();
+    
+    if reminder_count > 0 {
+        data.logging.log_command_execution(
+            "check_reminders", 
+            None, 
+            None
+        );
+        tracing::info!("Processing {} due reminders", reminder_count);
+    }
+
+    for reminder in due_reminders {
+        let channel = ChannelId::new(reminder.channel_id as u64);
+        let content = reminder.message.clone();
+
+        match channel.send_message(&http, CreateMessage::new().content(&content)).await {
+            Ok(_) => {
+                data.database.update_reminder_last_sent(reminder.id).await?;
+                reminders_sent += 1;
+            },
+            Err(e) => {
+                tracing::warn!("Failed to send reminder to channel {}: {}", 
+                     reminder.channel_id, e);
+            }
+        }
+    }
+    
+    // Log metrics
+    let elapsed = start_time.elapsed();
+    if reminders_sent > 0 || reminder_count > 0 {
+        tracing::info!("Reminder check completed: {}/{} reminders sent in {:?}", 
+             reminders_sent, reminder_count, elapsed);
+    } else {
+        tracing::debug!("Reminder check completed: No due reminders found ({:?})", elapsed);
     }
 
     Ok(())
@@ -273,6 +347,57 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
     }
 
     client.cache.set_max_messages(1000);
+    
+    // Create Arc references for use in the reminder checker task
+    let http = client.http.clone();
+    let task_data = app_data.clone();
+    
+    // Register the reminder checker task with high priority
+    info!("Scheduling reminder checker task");
+    if let Err(e) = app_data.task_manager.spawn_task_with_priority(
+        "reminder_checker",
+        crate::services::task_manager::TaskPriority::High,
+        async move {
+            info!("Reminder checker task started");
+            let check_interval = Duration::from_secs(60); // Check every minute
+            let mut interval = tokio::time::interval(check_interval);
+            
+            // For tracking consecutive errors
+            let mut consecutive_errors = 0;
+            const MAX_CONSECUTIVE_ERRORS: u32 = 5;
+            
+            loop {
+                interval.tick().await;
+                debug!("Checking for due reminders");
+                
+                match check_and_send_reminders_http(&http, &task_data).await {
+                    Ok(_) => {
+                        // Reset error counter on success
+                        if consecutive_errors > 0 {
+                            consecutive_errors = 0;
+                            info!("Reminder checker recovered after previous errors");
+                        }
+                    },
+                    Err(e) => {
+                        consecutive_errors += 1;
+                        error!("Error checking reminders (attempt {}): {}", 
+                            consecutive_errors, e);
+                        
+                        // If we've had too many consecutive errors, back off temporarily
+                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                            warn!("Too many consecutive errors, backing off for 5 minutes");
+                            tokio::time::sleep(Duration::from_secs(300)).await;
+                            consecutive_errors = 0;
+                        }
+                    }
+                }
+            }
+        }
+    ).await {
+        error!("Failed to schedule reminder checker task: {}", e);
+    } else {
+        info!("Reminder checker task scheduled successfully");
+    }
 
     client.start_autosharded().await.map_err(Error::from)
 }
