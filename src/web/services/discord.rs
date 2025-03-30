@@ -157,6 +157,50 @@ pub enum TokenType {
     Bot
 }
 
+/// Discord application command structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscordApplicationCommand {
+    /// Command ID (if existing)
+    pub id: Option<String>,
+    /// Command name
+    pub name: String,
+    /// Command description
+    pub description: String,
+    /// Command options
+    #[serde(default)]
+    pub options: Vec<DiscordApplicationCommandOption>,
+}
+
+/// Discord application command option structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscordApplicationCommandOption {
+    /// Option type (1=SubCommand, 2=SubCommandGroup, 3=String, 4=Integer, etc.)
+    #[serde(rename = "type")]
+    pub option_type: i32,
+    /// Option name
+    pub name: String,
+    /// Option description
+    pub description: String,
+    /// Whether option is required
+    #[serde(default)]
+    pub required: bool,
+    /// Choices for the option
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<DiscordApplicationCommandOptionChoice>,
+    /// Sub-options for this option
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<DiscordApplicationCommandOption>,
+}
+
+/// Discord application command option choice
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscordApplicationCommandOptionChoice {
+    /// Choice name
+    pub name: String,
+    /// Choice value
+    pub value: serde_json::Value,
+}
+
 /// Discord API service
 pub struct DiscordService {
     /// HTTP client
@@ -169,6 +213,8 @@ pub struct DiscordService {
     api_base: String,
     /// Cache service (optional)
     cache: Option<Arc<CacheService>>,
+    /// Application ID (for bot commands)
+    application_id: Option<String>,
 }
 
 impl DiscordService {
@@ -184,11 +230,12 @@ impl DiscordService {
             token_type: TokenType::User,
             api_base: "https://discord.com/api/v10".to_string(),
             cache: None,
+            application_id: None,
         }
     }
     
     /// Create a new Discord API service with bot token
-    pub fn new_bot(token: impl Into<String>) -> Self {
+    pub fn new_bot(token: impl Into<String>, application_id: Option<String>) -> Self {
         let client = reqwest::Client::builder()
             .build()
             .expect("Failed to create HTTP client");
@@ -199,6 +246,7 @@ impl DiscordService {
             token_type: TokenType::Bot,
             api_base: "https://discord.com/api/v10".to_string(),
             cache: None,
+            application_id,
         }
     }
     
@@ -214,11 +262,12 @@ impl DiscordService {
             token_type: TokenType::User,
             api_base: "https://discord.com/api/v10".to_string(),
             cache: Some(cache),
+            application_id: None,
         }
     }
     
     /// Create a new Discord API service with bot token and caching
-    pub fn new_bot_with_cache(token: impl Into<String>, cache: Arc<CacheService>) -> Self {
+    pub fn new_bot_with_cache(token: impl Into<String>, cache: Arc<CacheService>, application_id: Option<String>) -> Self {
         let client = reqwest::Client::builder()
             .build()
             .expect("Failed to create HTTP client");
@@ -229,6 +278,7 @@ impl DiscordService {
             token_type: TokenType::Bot,
             api_base: "https://discord.com/api/v10".to_string(),
             cache: Some(cache),
+            application_id,
         }
     }
 
@@ -845,5 +895,120 @@ impl DiscordService {
             let _ = cache.set(&etag_key, String::new(), short_ttl, true).await;
         }
         Ok(())
+    }
+    
+    /// Set application ID for the bot
+    pub fn set_application_id(&mut self, application_id: String) {
+        self.application_id = Some(application_id);
+    }
+    
+    /// Get application ID
+    pub fn application_id(&self) -> Option<&str> {
+        self.application_id.as_deref()
+    }
+    
+    /// Sync commands for a guild based on enabled settings
+    pub async fn sync_guild_commands(
+        &self, 
+        guild_id: &str, 
+        enabled_commands: Vec<DiscordApplicationCommand>
+    ) -> Result<(), Error> {
+        // Ensure we have an application ID
+        let app_id = match &self.application_id {
+            Some(id) => id,
+            None => {
+                error!("Cannot sync guild commands: application ID not set");
+                return Err(Error::Unknown("Application ID not set".to_string()));
+            }
+        };
+        
+        // Endpoint for bulk overwriting guild commands
+        let url = format!(
+            "{}/applications/{}/guilds/{}/commands", 
+            self.api_base, 
+            app_id, 
+            guild_id
+        );
+        
+        debug!("Syncing {} commands to guild {}", enabled_commands.len(), guild_id);
+        
+        // Send PUT request to overwrite all commands
+        let response = self.client
+            .put(&url)
+            .headers(self.auth_headers())
+            .json(&enabled_commands)
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Discord API request error: {}", e);
+                Error::Unknown(format!("Discord API request error: {}", e))
+            })?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read response body".to_string());
+
+            error!("Discord API error syncing commands: Status {}, Body: {}", status, text);
+            return Err(Error::Unknown(format!("Discord API error syncing commands: {}", status)));
+        }
+        
+        info!("Successfully synced {} commands to guild {}", enabled_commands.len(), guild_id);
+        Ok(())
+    }
+    
+    /// Get the list of registered commands for a guild
+    pub async fn get_guild_commands(&self, guild_id: &str) -> Result<Vec<DiscordApplicationCommand>, Error> {
+        // Ensure we have an application ID
+        let app_id = match &self.application_id {
+            Some(id) => id,
+            None => {
+                error!("Cannot get guild commands: application ID not set");
+                return Err(Error::Unknown("Application ID not set".to_string()));
+            }
+        };
+        
+        // Endpoint for getting guild commands
+        let url = format!(
+            "{}/applications/{}/guilds/{}/commands", 
+            self.api_base, 
+            app_id, 
+            guild_id
+        );
+        
+        debug!("Getting commands for guild {}", guild_id);
+        
+        // Send GET request 
+        let response = self.client
+            .get(&url)
+            .headers(self.auth_headers())
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Discord API request error: {}", e);
+                Error::Unknown(format!("Discord API request error: {}", e))
+            })?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read response body".to_string());
+
+            error!("Discord API error getting commands: Status {}, Body: {}", status, text);
+            return Err(Error::Unknown(format!("Discord API error getting commands: {}", status)));
+        }
+        
+        // Parse the response
+        let commands: Vec<DiscordApplicationCommand> = response.json().await.map_err(|e| {
+            error!("Failed to parse Discord commands response: {}", e);
+            Error::Unknown(format!("Failed to parse Discord commands response: {}", e))
+        })?;
+        
+        debug!("Retrieved {} commands from guild {}", commands.len(), guild_id);
+        Ok(commands)
     }
 }

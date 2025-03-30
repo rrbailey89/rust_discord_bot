@@ -3,7 +3,7 @@
 
 use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode, HttpMessage};
 use serde::Serialize;
-use tracing::{error, info, debug};
+use tracing::{error, info, debug, warn};
 
 use crate::error::Error;
 use crate::web::state::WebAppState;
@@ -255,8 +255,7 @@ async fn update_command_settings(
         }));
     }
     
-    // Create command service
-    let command_service = CommandService::new(state.database().clone());
+    // Create services
     let guild_service = GuildService::new(state.database().clone());
     
     // Check if bot is in this guild
@@ -272,6 +271,25 @@ async fn update_command_settings(
         return HttpResponse::NotFound().json(serde_json::json!({
             "error": "Bot is not in this guild"
         }));
+    }
+    
+    // Create command service with Discord integration
+    let mut command_service = CommandService::new(state.database().clone());
+    
+    // If we have a bot token and application ID, add Discord service for command sync
+    // If we have a bot token and application ID, add Discord service for command sync
+    if let (Some(token), Some(app_id)) = (
+        Some(state.config().bot.bot_token.clone()), 
+        state.config().bot.application_id.clone()
+    ) {
+        let discord_service = crate::web::services::discord::DiscordService::new_bot(
+            token, 
+            Some(app_id)
+        );
+        command_service = command_service.with_discord_service(discord_service);
+        debug!("Discord API service configured for command sync");
+    } else {
+        warn!("Bot token or application ID missing, command sync with Discord will be disabled");
     }
     
     // Update command settings

@@ -58,7 +58,8 @@ impl WebAppState {
         // Use the bot token from config
         crate::web::services::discord::DiscordService::new_bot_with_cache(
             self.config().bot.bot_token.clone(),
-            self.cache().clone()
+            self.cache().clone(),
+            self.config().bot.application_id.clone()
         )
     }
 }

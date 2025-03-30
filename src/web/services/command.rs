@@ -11,16 +11,43 @@ use crate::web::models::command::{
 use tracing::{debug, error, info};
 use serde_json::Value;
 
+use std::sync::Arc;
+use crate::services::cache::CacheService;
+use crate::web::services::discord::{DiscordService, DiscordApplicationCommand, DiscordApplicationCommandOption};
+
 /// Command service for database operations
 pub struct CommandService {
     /// Database service
     db: DatabaseService,
+    /// Discord service (optional, for command sync)
+    discord: Option<DiscordService>,
+    /// Cache service (optional for caching operations)
+    cache: Option<Arc<crate::services::cache::CacheService>>,
 }
 
 impl CommandService {
     /// Create a new command service
     pub fn new(db: DatabaseService) -> Self {
-        Self { db }
+        Self { 
+            db,
+            discord: None,
+            cache: None,
+        }
+    }
+    
+    /// Create a new command service with cache
+    pub fn new_with_cache(db: DatabaseService, cache: Arc<crate::services::cache::CacheService>) -> Self {
+        Self { 
+            db,
+            discord: None,
+            cache: Some(cache),
+        }
+    }
+    
+    /// Set Discord service for command synchronization
+    pub fn with_discord_service(mut self, discord: DiscordService) -> Self {
+        self.discord = Some(discord);
+        self
     }
 
     /// Get all available commands
@@ -102,17 +129,21 @@ impl CommandService {
         let client = self.db.get_client().await?;
 
         // Check if the command exists
-        let command_exists = client
-            .query_one(
-                "SELECT 1 FROM commands WHERE command_id = $1 LIMIT 1",
+        let command_row = client
+            .query_opt(
+                "SELECT name, description FROM commands WHERE command_id = $1 LIMIT 1",
                 &[&command_id],
             )
-            .await
-            .is_ok();
+            .await?;
 
-        if !command_exists {
-            return Err(Error::Unknown(format!("Command not found: {}", command_id)));
-        }
+        let command_info = match command_row {
+            Some(row) => {
+                let name: String = row.get(0);
+                let description: String = row.get(1);
+                (name, description)
+            },
+            None => return Err(Error::Unknown(format!("Command not found: {}", command_id))),
+        };
 
         // If both enabled and settings are None, there's nothing to update
         if request.enabled.is_none() && request.settings.is_none() {
@@ -142,6 +173,25 @@ impl CommandService {
             (None, None) => None,
         };
 
+        // Get cooldown setting from settings if it exists
+        let cooldown_secs = if let Some(settings_value) = &settings {
+            settings_value.get("cooldown")
+                .and_then(|v| v.as_u64())
+                .or_else(|| {
+                    // Get from command config if not in settings
+                    let configs = crate::commands::get_command_config();
+                    configs
+                        .get(command_id)
+                        .and_then(|c| c.cooldown)
+                })
+        } else {
+            // If no settings provided, get default from command config
+            let configs = crate::commands::get_command_config();
+            configs
+                .get(command_id)
+                .and_then(|c| c.cooldown)
+        };
+
         // Update in database
         client
             .execute(
@@ -156,6 +206,100 @@ impl CommandService {
             .await?;
 
         info!("Updated command settings for guild {} command {}", guild_id, command_id);
+        
+        // If the enabled state changed or we have an explicit rate limit, sync with Discord
+        let enabled_changed = request.enabled.is_some() && request.enabled != Some(current.enabled);
+        
+        if enabled_changed && self.discord.is_some() {
+            // Sync guild commands with Discord
+            self.sync_guild_commands(guild_id).await?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Sync all enabled commands with Discord for a guild
+    pub async fn sync_guild_commands(&self, guild_id: i64) -> Result<(), Error> {
+        // If no Discord service is configured, just return
+        let discord = match &self.discord {
+            Some(service) => service,
+            None => {
+                debug!("No Discord service configured, skipping command sync");
+                return Ok(());
+            }
+        };
+        
+        // Get all enabled guild commands
+        let all_settings = self.get_all_command_settings(guild_id).await?;
+        let enabled_commands: Vec<_> = all_settings
+            .into_iter()
+            .filter(|cmd| cmd.enabled)
+            .collect();
+            
+        // Store the count for logging later
+        let enabled_count = enabled_commands.len();
+        
+        // Get command details for all enabled commands
+        let mut app_commands = Vec::new();
+        
+        for cmd in enabled_commands {
+            let details = self.get_command_details(guild_id, &cmd.command_id).await?;
+            
+            // Convert to Discord application command format
+            let mut options = Vec::new();
+            
+            // Add options if the command has them
+            if let Some(config_schema) = details.config_schema {
+                for opt in config_schema.options {
+                    let discord_option_type = match opt.option_type.as_str() {
+                        "string" => 3, // STRING
+                        "integer" => 4, // INTEGER
+                        "boolean" => 5, // BOOLEAN
+                        "user" => 6,    // USER
+                        "channel" => 7, // CHANNEL
+                        "role" => 8,    // ROLE
+                        _ => 3, // Default to STRING
+                    };
+                    
+                    // Create choices for enum type
+                    let choices = if let Some(enum_values) = opt.enum_values {
+                        enum_values.iter()
+                            .map(|ev| {
+                                crate::web::services::discord::DiscordApplicationCommandOptionChoice {
+                                    name: ev.label.clone(),
+                                    value: serde_json::Value::String(ev.value.clone()),
+                                }
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    
+                    options.push(DiscordApplicationCommandOption {
+                        option_type: discord_option_type,
+                        name: opt.name,
+                        description: opt.description,
+                        required: opt.required,
+                        choices,
+                        options: Vec::new(),
+                    });
+                }
+            }
+            
+            app_commands.push(DiscordApplicationCommand {
+                id: None,
+                name: details.name,
+                description: details.description,
+                options,
+            });
+        }
+        
+        // Sync commands with Discord
+        discord.sync_guild_commands(&guild_id.to_string(), app_commands).await?;
+        
+        info!("Synced {} commands with Discord for guild {}", 
+            enabled_count, guild_id);
+        
         Ok(())
     }
 

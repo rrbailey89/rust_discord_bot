@@ -335,10 +335,45 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                 case_insensitive_commands: true,
                 ..Default::default()
             },
-            // Skip the custom pre-command handler for now to avoid compilation issues
+            on_error: |error| {
+                Box::pin(async move {
+                    tracing::error!("Command error: {}", error);
+                    if let poise::FrameworkError::Command { error, ctx, .. } = error {
+                        let _ = ctx.say(format!("Error running command: {}", error)).await;
+                    }
+                })
+            },
+            pre_command: |ctx| {
+                Box::pin(async move {
+                    let command_name = ctx.command().qualified_name.clone();
+                    let user_id = ctx.author().id.get() as i64;
+                    
+                    // Only apply cooldowns for guild commands
+                    if let Some(guild_id) = ctx.guild_id() {
+                        let guild_id = guild_id.get() as i64;
+                        
+                        // Get the cooldown service from data
+                        let data = ctx.data();
+                        
+                        // Check if the command is on cooldown
+                        if let Ok(Some(remaining)) = data.command_cooldown.is_on_cooldown(guild_id, &command_name, user_id).await {
+                            // Command is on cooldown, respond to the user
+                            let seconds = remaining.as_secs();
+                            let _ = ctx.say(format!("This command is on cooldown. Please wait {} more second{} before using it again.", 
+                                seconds, if seconds == 1 { "" } else { "s" })).await;
+                            
+                            // Return early to prevent execution
+                            return;
+                        }
+                        
+                        // Command is not on cooldown, record this usage
+                        let _ = data.command_cooldown.record_command_usage(guild_id, &command_name, user_id).await;
+                    }
+                })
+            },
             event_handler: |ctx, event, framework, data| {
                 Box::pin(async move {
-                    // Just pass through to the existing event handler
+                    // Pass through to the existing event handler
                     events::handle_event(ctx, event, framework, data).await
                 })
             },
