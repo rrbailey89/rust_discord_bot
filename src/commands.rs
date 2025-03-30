@@ -42,12 +42,8 @@ pub fn get_command_config() -> HashMap<&'static str, CommandConfig> {
         cooldown: None,
         description: "Show command help",
     });
-    configs.insert("blame", CommandConfig { 
-        scope: CommandScope::Global, 
-        name: "blame",
-        cooldown: None,
-        description: "Blame Serena for something",
-    });
+    
+    // "blame" command moved to guild commands (no longer global)
     
     // Admin commands
     configs.insert("warn", CommandConfig {
@@ -135,6 +131,12 @@ pub fn get_command_config() -> HashMap<&'static str, CommandConfig> {
         name: "createimage",
         cooldown: Some(30),
         description: "Create an AI image",
+    });
+    configs.insert("blame", CommandConfig { 
+        scope: CommandScope::Guild, 
+        name: "blame",
+        cooldown: None,
+        description: "Blame Serena for something",
     });
     configs.insert("fluximage", CommandConfig {
         scope: CommandScope::Guild,

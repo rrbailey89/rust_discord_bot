@@ -451,7 +451,7 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                 
                 if !global_commands.is_empty() {
                     poise::builtins::register_globally(ctx, &global_commands).await?;
-                    info!("Registered {} global commands with Discord (ping, help, blame)", global_commands.len());
+                    info!("Registered {} global commands with Discord (ping, help)", global_commands.len());
                 } else {
                     warn!("No global commands found to register");
                 }
