@@ -1,6 +1,5 @@
--- Update the blame_serena command to be disabled by default
--- This ensures new guilds need to explicitly enable the command
+-- NOTE: This migration is superseded by 001_set_all_guild_commands_default_off.sql
+-- which sets all guild commands to be disabled by default, including blame_serena.
 
-UPDATE commands 
-SET default_enabled = FALSE
-WHERE command_id = 'blame_serena';
+-- Keep this file for migration version tracking, but the actual update is 
+-- handled by the more comprehensive migration that follows.
