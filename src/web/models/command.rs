@@ -19,6 +19,8 @@ pub struct CommandInfo {
     pub requires_admin: bool,
     /// Whether the command has configuration options
     pub has_config: bool,
+    /// Discord-friendly command name
+    pub discord_name: Option<String>,
 }
 
 /// Detailed command information with configuration
@@ -38,6 +40,8 @@ pub struct CommandDetails {
     pub config_schema: Option<ConfigSchema>,
     /// Current command configuration
     pub current_config: Option<HashMap<String, serde_json::Value>>,
+    /// Discord-friendly command name
+    pub discord_name: Option<String>,
 }
 
 /// Command configuration schema

@@ -4,11 +4,11 @@
 use std::collections::HashMap;
 use crate::error::Error;
 use crate::services::database::DatabaseService;
+use tracing::{debug, error, info, warn};
 use crate::web::models::command::{
     CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest, CommandResponse,
     ConfigSchema, ConfigOption, EnumValue
 };
-use tracing::{debug, error, info};
 use serde_json::Value;
 
 use std::sync::Arc;
@@ -50,6 +50,133 @@ impl CommandService {
         self
     }
 
+    /// Sync command names from Discord API to database
+    pub async fn sync_command_names_from_discord(&self) -> Result<(), Error> {
+        // Check if Discord service is available
+        let discord = match &self.discord {
+            Some(service) => service,
+            None => {
+                debug!("No Discord service configured, skipping command name sync");
+                return Ok(());
+            }
+        };
+        
+        info!("Starting command name synchronization from Discord API");
+        
+        // Get client for database operations
+        let client = self.db.get_client().await?;
+        
+        // Retrieve all available commands from our database first
+        let our_commands = self.get_available_commands().await?;
+        
+        // Create a map of our command IDs to command info
+        let mut command_map: HashMap<String, &CommandInfo> = HashMap::new();
+        for cmd in &our_commands {
+            command_map.insert(cmd.id.clone(), cmd);
+        }
+        
+        // Optionally retrieve global commands
+        let global_commands = match discord.get_global_commands().await {
+            Ok(cmds) => {
+                info!("Retrieved {} global commands from Discord", cmds.len());
+                cmds
+            },
+            Err(e) => {
+                warn!("Failed to retrieve global commands: {}", e);
+                Vec::new()
+            }
+        };
+        
+        // Track which command names we've updated
+        let mut updated_commands = 0;
+        
+        // Process global commands first if any
+        for cmd in &global_commands {
+            // Find a match in our commands by comparing names case-insensitively
+            let mut matched_id = None;
+            
+            for our_cmd in &our_commands {
+                if our_cmd.name.to_lowercase() == cmd.name.to_lowercase() {
+                    matched_id = Some(our_cmd.id.clone());
+                    break;
+                }
+            }
+            
+            if let Some(id) = matched_id {
+                debug!("Updating command {} with Discord global name: {}", id, cmd.name);
+                
+                client
+                    .execute(
+                        "UPDATE commands SET discord_name = $1 WHERE command_id = $2",
+                        &[&cmd.name, &id],
+                    )
+                    .await?;
+                
+                updated_commands += 1;
+            }
+        }
+        
+        // Get list of guilds the bot is in from database
+        let guild_rows = client
+            .query(
+                "SELECT guild_id FROM guilds WHERE bot_joined = true",
+                &[],
+            )
+            .await?;
+        
+        let guild_ids: Vec<i64> = guild_rows.iter().map(|row| row.get(0)).collect();
+        
+        // For each guild, get guild commands and update our database
+        for guild_id in guild_ids {
+            info!("Checking commands for guild {}", guild_id);
+            
+            let guild_commands = match discord.get_guild_commands(&guild_id.to_string()).await {
+                Ok(cmds) => {
+                    info!("Retrieved {} commands for guild {}", cmds.len(), guild_id);
+                    cmds
+                },
+                Err(e) => {
+                    warn!("Failed to retrieve commands for guild {}: {}", guild_id, e);
+                    continue; // Skip to next guild
+                }
+            };
+            
+            // Process each guild command
+            for cmd in guild_commands {
+                // Skip empty names (shouldn't happen, but just to be safe)
+                if cmd.name.is_empty() {
+                    continue;
+                }
+                
+                // Find a match in our commands by comparing names case-insensitively
+                let mut matched_id = None;
+                
+                for our_cmd in &our_commands {
+                    if our_cmd.name.to_lowercase() == cmd.name.to_lowercase() {
+                        matched_id = Some(our_cmd.id.clone());
+                        break;
+                    }
+                }
+                
+                if let Some(id) = matched_id {
+                    debug!("Updating command {} with Discord guild name: {}", id, cmd.name);
+                    
+                    client
+                        .execute(
+                            "UPDATE commands SET discord_name = $1 WHERE command_id = $2",
+                            &[&cmd.name, &id],
+                        )
+                        .await?;
+                    
+                    updated_commands += 1;
+                }
+            }
+        }
+        
+        info!("Command name synchronization complete, updated {} commands", updated_commands);
+        Ok(())
+    }
+
     /// Get all available commands
     pub async fn get_available_commands(&self) -> Result<Vec<CommandInfo>, Error> {
         let client = self.db.get_client().await?;
@@ -63,7 +190,8 @@ impl CommandService {
                     description, 
                     category, 
                     requires_admin,
-                    coalesce(options IS NOT NULL, false) as has_config
+                    coalesce(options IS NOT NULL, false) as has_config,
+                    discord_name
                 FROM commands
                 ORDER BY category, name",
                 &[],
@@ -80,6 +208,7 @@ impl CommandService {
                 category: row.get(3),
                 requires_admin: row.get(4),
                 has_config: row.get(5),
+                discord_name: row.get(6),
             })
             .collect();
 
@@ -286,9 +415,15 @@ impl CommandService {
                 }
             }
             
+            // Use discord_name if available, otherwise use name
+            let command_name = details.discord_name.unwrap_or_else(|| {
+                debug!("Using original name for command {}: no discord_name available", details.id);
+                details.name.clone()
+            });
+            
             app_commands.push(DiscordApplicationCommand {
                 id: None,
-                name: details.name,
+                name: command_name,
                 description: details.description,
                 options,
             });
@@ -319,7 +454,8 @@ impl CommandService {
                     description, 
                     category, 
                     requires_admin,
-                    options as config_schema  -- Map options to config_schema
+                    options as config_schema,  -- Map options to config_schema
+                    discord_name
                 FROM commands
                 WHERE command_id = $1",
                 &[&command_id],
@@ -352,6 +488,7 @@ impl CommandService {
             requires_admin: command_row.get(3),
             config_schema,
             current_config: settings.settings,
+            discord_name: command_row.get(5),
         };
 
         Ok(details)

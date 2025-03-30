@@ -237,6 +237,27 @@ async fn main() -> Result<(), Error> {
     // Use the prepared version for all further operations
     let database = database_mut;
     
+    // Synchronize command names with Discord
+    info!("Synchronizing command names with Discord...");
+    if let (Some(token), Some(app_id)) = (
+        Some(config.bot.bot_token.clone()), 
+        config.bot.application_id.clone()
+    ) {
+        let command_service = web::services::command::CommandService::new(database.clone());
+        let discord_service = web::services::discord::DiscordService::new_bot(
+            token, 
+            Some(app_id)
+        );
+        let command_service_with_discord = command_service.with_discord_service(discord_service);
+        
+        // Run the sync operation
+        if let Err(e) = command_service_with_discord.sync_command_names_from_discord().await {
+            error!("Failed to sync command names from Discord: {}", e);
+        } else {
+            info!("Successfully synchronized command names with Discord");
+        }
+    }
+    
     let start_time = Arc::new(Instant::now());
 
     // Initialize task manager

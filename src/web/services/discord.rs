@@ -907,6 +907,58 @@ impl DiscordService {
         self.application_id.as_deref()
     }
     
+    /// Get the list of global application commands
+    pub async fn get_global_commands(&self) -> Result<Vec<DiscordApplicationCommand>, Error> {
+        // Ensure we have an application ID
+        let app_id = match &self.application_id {
+            Some(id) => id,
+            None => {
+                error!("Cannot get global commands: application ID not set");
+                return Err(Error::Unknown("Application ID not set".to_string()));
+            }
+        };
+        
+        // Endpoint for getting global commands
+        let url = format!(
+            "{}/applications/{}/commands", 
+            self.api_base, 
+            app_id
+        );
+        
+        debug!("Getting global commands");
+        
+        // Send GET request 
+        let response = self.client
+            .get(&url)
+            .headers(self.auth_headers())
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Discord API request error: {}", e);
+                Error::Unknown(format!("Discord API request error: {}", e))
+            })?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read response body".to_string());
+
+            error!("Discord API error getting global commands: Status {}, Body: {}", status, text);
+            return Err(Error::Unknown(format!("Discord API error getting global commands: {}", status)));
+        }
+        
+        // Parse the response
+        let commands: Vec<DiscordApplicationCommand> = response.json().await.map_err(|e| {
+            error!("Failed to parse Discord global commands response: {}", e);
+            Error::Unknown(format!("Failed to parse Discord global commands response: {}", e))
+        })?;
+        
+        debug!("Retrieved {} global commands", commands.len());
+        Ok(commands)
+    }
+    
     /// Sync commands for a guild based on enabled settings
     pub async fn sync_guild_commands(
         &self, 

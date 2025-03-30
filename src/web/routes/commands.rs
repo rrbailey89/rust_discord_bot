@@ -305,9 +305,16 @@ async fn update_command_settings(
         Err(e) => {
             error!("Error updating command settings: {}", e);
             
+            // Provide more detailed error message based on error type
+            let error_message = if e.to_string().contains("Discord API error syncing commands") {
+                "Command settings were saved in database but could not be synchronized with Discord. This may be due to Discord API limitations or temporary issues. Your changes are saved and will take effect when the bot restarts."
+            } else {
+                &format!("Failed to update command settings: {}", e)
+            };
+            
             let response = CommandResponse {
                 success: false,
-                message: format!("Failed to update command settings: {}", e),
+                message: error_message.to_string(),
             };
             
             HttpResponse::InternalServerError().json(response)
