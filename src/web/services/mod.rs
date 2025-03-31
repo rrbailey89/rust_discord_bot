@@ -10,7 +10,6 @@ pub mod settings;
 pub mod analytics;
 
 pub use auth::AuthService;
-pub use discord::DiscordService;
 pub use guild::GuildService;
 pub use command::CommandService;
 pub use rule::RuleService;
