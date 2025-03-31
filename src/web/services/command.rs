@@ -7,12 +7,12 @@ use crate::services::database::DatabaseService;
 use tracing::{debug, info, warn, error};
 use crate::web::models::command::{
     CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest,
-    ConfigSchema
+    ConfigSchema, ConfigOption, EnumValue
 };
 use serde_json::Value;
 
 use std::sync::Arc;
-use crate::web::services::discord::{DiscordService, DiscordApplicationCommand, DiscordApplicationCommandOption};
+use crate::web::services::discord::{DiscordService, DiscordApplicationCommand, DiscordApplicationCommandOption, DiscordApplicationCommandOptionChoice};
 
 /// Command service for database operations
 pub struct CommandService {
@@ -344,45 +344,13 @@ impl CommandService {
                 // Create the command structure
                 let command_details = self.get_command_details(guild_id, command_id).await?;
                 
-                // Convert the options if the command has them
-                let mut options = Vec::new();
-                
-                if let Some(config_schema) = &command_details.config_schema {
-                    for opt in &config_schema.options {
-                        let discord_option_type = match opt.option_type.as_str() {
-                            "string" => 3, // STRING
-                            "integer" => 4, // INTEGER
-                            "boolean" => 5, // BOOLEAN
-                            "user" => 6,    // USER
-                            "channel" => 7, // CHANNEL
-                            "role" => 8,    // ROLE
-                            _ => 3, // Default to STRING
-                        };
-                        
-                        // Create choices for enum type
-                        let choices = if let Some(enum_values) = &opt.enum_values {
-                            enum_values.iter()
-                                .map(|ev| {
-                                    crate::web::services::discord::DiscordApplicationCommandOptionChoice {
-                                        name: ev.label.clone(),
-                                        value: serde_json::Value::String(ev.value.clone()),
-                                    }
-                                })
-                                .collect()
-                        } else {
-                            Vec::new()
-                        };
-                        
-                        options.push(crate::web::services::discord::DiscordApplicationCommandOption {
-                            option_type: discord_option_type,
-                            name: opt.name.clone(),
-                            description: opt.description.clone(),
-                            required: opt.required,
-                            choices,
-                            options: Vec::new(),
-                        });
-                    }
-                }
+                // Convert the options recursively if the command has them
+                let options = if let Some(config_schema) = &command_details.config_schema {
+                    // Call the helper function correctly
+                    convert_options_recursive(&config_schema.options)? 
+                } else {
+                    Vec::new()
+                };
                 
                 // Create the command for Discord
                 let app_command = crate::web::services::discord::DiscordApplicationCommand {
@@ -630,14 +598,17 @@ impl CommandService {
                 .await.is_ok();
                 
             if !exists {
-                info!("Initializing settings for command {} in guild {}", command.id, guild_id);
+                // Determine the default enabled state
+                let default_enabled = command.id == "ping" || command.id == "help";
+                
+                info!("Initializing settings for command {} in guild {} (enabled: {})", command.id, guild_id, default_enabled);
                 client
                     .execute(
                         "INSERT INTO guild_command_settings 
                          (guild_id, command_id, enabled, settings, discord_command_id)
                          VALUES ($1, $2, $3, $4, $5)
                          ON CONFLICT (guild_id, command_id) DO NOTHING",
-                        &[&guild_id, &command.id, &true, &None::<serde_json::Value>, &None::<String>],
+                        &[&guild_id, &command.id, &default_enabled, &None::<serde_json::Value>, &None::<String>],
                     )
                     .await?;
             }
@@ -646,4 +617,63 @@ impl CommandService {
         info!("Initialized command settings for guild {}", guild_id);
         Ok(())
     }
+}
+
+/// Helper function to recursively convert ConfigOption to DiscordApplicationCommandOption
+fn convert_options_recursive(options: &[ConfigOption]) -> Result<Vec<DiscordApplicationCommandOption>, Error> {
+    let mut discord_options = Vec::new();
+
+    for opt in options {
+        let discord_option_type = match opt.option_type.as_str() {
+            "sub_command" => 1,
+            "sub_command_group" => 2,
+            "string" => 3,
+            "integer" => 4,
+            "boolean" => 5,
+            "user" => 6,
+            "channel" => 7,
+            "role" => 8,
+            "mentionable" => 9,
+            "number" => 10, // Represents float/double
+            "attachment" => 11,
+            _ => {
+                warn!("Unknown option type '{}', defaulting to string", opt.option_type);
+                3 // Default to STRING
+            }
+        };
+
+        // Convert enum choices if present
+        let choices = if let Some(enum_values) = &opt.enum_values {
+            enum_values.iter()
+                .map(|ev| DiscordApplicationCommandOptionChoice {
+                    name: ev.label.clone(),
+                    value: serde_json::Value::String(ev.value.clone()),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Recursively convert nested options for subcommands/groups
+        let nested_options = if discord_option_type == 1 || discord_option_type == 2 {
+            if let Some(nested) = &opt.options {
+                convert_options_recursive(nested)?
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        discord_options.push(DiscordApplicationCommandOption {
+            option_type: discord_option_type,
+            name: opt.name.clone(),
+            description: opt.description.clone(),
+            required: opt.required,
+            choices,
+            options: nested_options,
+        });
+    }
+
+    Ok(discord_options)
 }

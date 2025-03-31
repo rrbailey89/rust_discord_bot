@@ -66,6 +66,9 @@ pub struct ConfigOption {
     pub default: Option<serde_json::Value>,
     /// Possible enum values (for select options)
     pub enum_values: Option<Vec<EnumValue>>,
+    /// Nested options (for subcommands/groups)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<ConfigOption>>,
 }
 
 /// Enum value for select options
