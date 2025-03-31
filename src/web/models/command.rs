@@ -21,6 +21,8 @@ pub struct CommandInfo {
     pub has_config: bool,
     /// Discord-friendly command name
     pub discord_name: Option<String>,
+    /// Command scope ('Global' or 'Guild')
+    pub scope: String, 
 }
 
 /// Detailed command information with configuration

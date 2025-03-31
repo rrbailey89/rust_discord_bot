@@ -190,7 +190,8 @@ impl CommandService {
                     category, 
                     requires_admin,
                     coalesce(options IS NOT NULL, false) as has_config,
-                    discord_name
+                    discord_name,
+                    scope  -- Select the new scope column
                 FROM commands
                 ORDER BY category, name",
                 &[],
@@ -208,6 +209,7 @@ impl CommandService {
                 requires_admin: row.get(4),
                 has_config: row.get(5),
                 discord_name: row.get(6),
+                scope: row.get(7), // Populate the scope field
             })
             .collect();
 
@@ -559,21 +561,22 @@ impl CommandService {
         Ok(details)
     }
 
-    /// Get all command settings for a guild
+    /// Get all command settings for a specific guild (excluding global commands)
     pub async fn get_all_command_settings(
         &self,
         guild_id: i64,
     ) -> Result<Vec<CommandSettings>, Error> {
-        let client = self.db.get_client().await?;
-
-        // Get all commands
+        // Get all commands (including scope)
         let all_commands = self.get_available_commands().await?;
         let mut result = Vec::new();
 
-        // For each command, get its settings
+        // Filter for Guild-scoped commands and get their settings
         for command in all_commands {
-            let settings = self.get_command_settings(guild_id, &command.id).await?;
-            result.push(settings);
+            // Only include commands with 'Guild' scope
+            if command.scope == "Guild" {
+                let settings = self.get_command_settings(guild_id, &command.id).await?;
+                result.push(settings);
+            }
         }
 
         Ok(result)
