@@ -2,13 +2,10 @@
 use crate::commands::{CommandConfig, CommandScope};
 use crate::error::Error;
 use crate::services::database::DatabaseService;
-use crate::Data;
 use poise::serenity_prelude as serenity;
-use poise::serenity_prelude::GuildId;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
 
 /// Service for managing command registration at the guild level
 #[derive(Clone)]

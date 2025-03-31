@@ -10,7 +10,6 @@ mod models;
 pub mod services;
 
 pub use server::start_server;
-pub use state::WebAppState;
 
 /// Initialize the web server module.
 /// This function is called at application startup.

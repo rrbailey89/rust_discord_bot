@@ -5,12 +5,11 @@ use std::collections::HashMap;
 use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::rule::{
-    RuleInfo, CreateRuleRequest, UpdateRuleRequest, RuleResponse,
+    RuleInfo, CreateRuleRequest, UpdateRuleRequest,
     TestRuleRequest, TestRuleResponse, RuleAction
 };
-use chrono::{DateTime, Utc};
 use regex::Regex;
-use tracing::{debug, error, info};
+use tracing::info;
 use serde_json::Value;
 
 /// Word detection rule service

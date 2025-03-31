@@ -7,7 +7,6 @@ pub mod availability;
 use crate::error::Error;
 use crate::Data;
 use std::collections::HashMap;
-use std::time::Duration;
 
 // Command scope for registration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

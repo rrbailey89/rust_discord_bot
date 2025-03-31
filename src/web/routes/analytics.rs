@@ -1,13 +1,10 @@
 // src/web/routes/analytics.rs
 //! Analytics management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode};
-use serde::Serialize;
-use tracing::{error, info, debug};
+use actix_web::{web, HttpResponse, Responder, HttpRequest};
+use tracing::{error, info};
 
-use crate::error::Error;
 use crate::web::state::WebAppState;
-use crate::web::middleware::auth::Claims;
 use crate::web::models::analytics::{
     LogEventRequest, AnalyticsQueryParams, AnalyticsResponse
 };

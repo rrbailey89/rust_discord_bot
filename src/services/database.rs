@@ -220,7 +220,7 @@ impl DatabaseService {
         migrations.load_from_directory(migrations_dir)?;
         
         // Get a client connection
-        let mut client = self.get_client().await?;
+        let client = self.get_client().await?;
         
         // Create migrations table if it doesn't exist
         client.execute(

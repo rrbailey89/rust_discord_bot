@@ -1,14 +1,11 @@
 // src/web/handlers/mod.rs
 //! Request handlers for the web server
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode, HttpMessage};
-use serde::{Deserialize, Serialize};
-use tracing::{error, info, debug};
+use actix_web::{HttpResponse, HttpRequest, http::StatusCode, HttpMessage};
+use serde::Serialize;
+use tracing::{error, info};
 
-use crate::error::Error;
-use crate::web::state::WebAppState;
 use crate::web::middleware::auth::Claims;
-use crate::web::services::discord::DiscordService;
 
 // Modules for different handler categories
 pub mod users;
@@ -16,9 +13,6 @@ pub mod guilds;
 pub mod members;
 
 // Re-exports for easier imports
-pub use users::*;
-pub use guilds::*;
-pub use members::*;
 
 /// Common response wrapper for API endpoints
 #[derive(Debug, Serialize)]

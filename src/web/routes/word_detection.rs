@@ -1,15 +1,13 @@
 // src/web/routes/word_detection.rs
 //! Word detection rule management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode};
-use serde::Serialize;
-use tracing::{error, info, debug};
+use actix_web::{web, HttpResponse, Responder, HttpRequest};
+use tracing::{error, info};
 
-use crate::error::Error;
 use crate::web::state::WebAppState;
 use crate::web::models::rule::{
-    RuleInfo, CreateRuleRequest, UpdateRuleRequest, RuleResponse,
-    TestRuleRequest, TestRuleResponse
+    CreateRuleRequest, UpdateRuleRequest, RuleResponse,
+    TestRuleRequest
 };
 use crate::web::services::RuleService;
 use crate::web::services::GuildService;

@@ -9,7 +9,7 @@ pub mod rule;
 pub mod settings;
 pub mod analytics;
 
-pub use auth::{AuthService, DiscordOAuthConfig};
+pub use auth::AuthService;
 pub use discord::DiscordService;
 pub use guild::GuildService;
 pub use command::CommandService;

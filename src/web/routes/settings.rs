@@ -1,15 +1,11 @@
 // src/web/routes/settings.rs
 //! Settings management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode};
-use serde::Serialize;
-use tracing::{error, info, debug};
+use actix_web::{web, HttpResponse, Responder, HttpRequest};
+use tracing::{error, info};
 
-use crate::error::Error;
 use crate::web::state::WebAppState;
-use crate::web::middleware::auth::Claims;
 use crate::web::models::settings::{
-    GlobalSettings, UserPreferences, 
     UpdateGlobalSettingsRequest, UpdateUserPreferencesRequest, 
     SettingsResponse
 };

@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tokio::time::interval;
-use tracing::info;
 use once_cell::sync::Lazy;
 use crate::services::logging::LoggingService;
 

@@ -1,12 +1,11 @@
 // services/command_cooldown.rs
 use crate::error::Error;
 use crate::services::database::DatabaseService;
-use poise::serenity_prelude::UserId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Key for cooldown tracking: (guild_id, command_id, user_id)
 type CooldownKey = (i64, String, i64);

@@ -1,14 +1,12 @@
 // src/web/handlers/members.rs
 //! Handlers for guild member-related API endpoints
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest};
-use serde::{Deserialize, Serialize};
-use tracing::{error, info, debug};
+use actix_web::{web, Responder, HttpRequest};
+use serde::Deserialize;
+use tracing::{error, info};
 
 use crate::web::state::WebAppState;
-use crate::web::middleware::auth::Claims;
 use crate::web::services::discord::DiscordService;
-use crate::error::Error;
 use super::{success, error_response, get_claims_from_request};
 
 /// Request parameters for fetching guild members

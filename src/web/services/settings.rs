@@ -8,7 +8,7 @@ use crate::web::models::settings::{
     GlobalSettings, UserPreferences, 
     UpdateGlobalSettingsRequest, UpdateUserPreferencesRequest
 };
-use tracing::{debug, error, info};
+use tracing::info;
 use serde_json::Value;
 
 /// Settings service for database operations

@@ -10,11 +10,9 @@ use actix_files::{Files, NamedFile};
 use actix_web::{
     web::{self, Data as WebData},
     App, HttpResponse, HttpServer, Responder, middleware::Logger,
-    HttpRequest,
 };
 use std::net::TcpListener;
 use std::sync::Arc;
-use std::path::PathBuf;
 use tracing::{error, info};
 
 /// Handle SPA routes by serving index.html for non-API routes

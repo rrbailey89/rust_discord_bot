@@ -11,7 +11,6 @@ use actix_web::{
 use actix_web::error::{ErrorUnauthorized, ResponseError};
 use futures_util::Future;
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
-use serde::{Deserialize, Serialize};
 use std::task::{Context, Poll};
 use std::rc::Rc;
 use tracing::error;

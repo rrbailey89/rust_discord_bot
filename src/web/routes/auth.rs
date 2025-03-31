@@ -2,14 +2,12 @@
 //! Authentication routes
 
 use actix_web::{web, HttpResponse, Responder, HttpRequest, cookie::Cookie, HttpMessage};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::{error, info, debug};
 
 use crate::web::state::WebAppState;
-use crate::web::middleware::auth::Claims;
 use crate::web::models::auth::AuthResponse;
 use crate::web::services::auth::AuthService;
-use crate::error::Error;
 
 /// OAuth2 callback parameters
 #[derive(Deserialize)]

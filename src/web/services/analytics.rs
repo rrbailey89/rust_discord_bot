@@ -7,10 +7,10 @@ use crate::services::database::DatabaseService;
 use crate::web::models::analytics::{
     AnalyticsEvent, GuildAnalyticsSummary, CommandUsage,
     UserActivitySummary, GuildActivity, LogEventRequest,
-    AnalyticsQueryParams, AnalyticsResponse
+    AnalyticsQueryParams
 };
 use chrono::{DateTime, Utc, Duration};
-use tracing::{debug, error, info};
+use tracing::info;
 use serde_json::Value;
 
 /// Analytics service for database operations

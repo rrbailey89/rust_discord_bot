@@ -141,7 +141,7 @@ where
         };
         
         // Set rate limit headers
-        let mut rate_limit_headers = vec![
+        let rate_limit_headers = vec![
             (
                 HeaderName::from_static("x-ratelimit-limit"),
                 HeaderValue::from_str(&self.config.requests.to_string()).unwrap(),

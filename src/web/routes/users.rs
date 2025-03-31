@@ -1,7 +1,7 @@
 // src/web/routes/users.rs
 //! User-related API routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest};
+use actix_web::web;
 use crate::web::handlers::users;
 
 /// Configure user-related routes

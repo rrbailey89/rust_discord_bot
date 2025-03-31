@@ -144,7 +144,7 @@ pub struct DiscordChannel {
     pub topic: Option<String>,
 }
 
-use crate::services::cache::{CacheService, CacheResult};
+use crate::services::cache::CacheService;
 use std::sync::Arc;
 use std::time::Duration;
 

@@ -1,19 +1,16 @@
 // src/web/routes/guilds.rs
 //! Guild management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode, HttpMessage};
-use serde::Serialize;
+use actix_web::{web, HttpResponse, Responder, HttpRequest, HttpMessage};
 use tracing::{error, info, debug};
 
-use crate::error::Error;
 use crate::web::state::WebAppState;
 use crate::web::middleware::auth::Claims;
 use crate::web::models::guild::{
-    GuildInfo, GuildDetails, ChannelInfo, GuildSettings, 
+    GuildInfo, GuildDetails, ChannelInfo, 
     UpdateGuildSettingsRequest, GuildResponse
 };
 use crate::web::services::AuthService;
-use crate::web::services::DiscordService;
 use crate::web::services::GuildService;
 
 /// Configure guild routes

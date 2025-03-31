@@ -6,7 +6,6 @@ use crate::services::metrics::{MetricsService, MetricType, format_metric_name};
 use dashmap::DashMap;
 use std::any::Any;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::collections::VecDeque;

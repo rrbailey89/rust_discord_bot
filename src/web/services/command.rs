@@ -4,15 +4,14 @@
 use std::collections::HashMap;
 use crate::error::Error;
 use crate::services::database::DatabaseService;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use crate::web::models::command::{
-    CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest, CommandResponse,
-    ConfigSchema, ConfigOption, EnumValue
+    CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest,
+    ConfigSchema
 };
 use serde_json::Value;
 
 use std::sync::Arc;
-use crate::services::cache::CacheService;
 use crate::web::services::discord::{DiscordService, DiscordApplicationCommand, DiscordApplicationCommandOption};
 
 /// Command service for database operations

@@ -6,14 +6,12 @@ use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::auth::{UserSession, DiscordUser, DiscordTokenResponse, TokenClaims, UserInfo, AuthResponse};
 use crate::web::services::discord::DiscordGuild;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, decode, Header, EncodingKey, DecodingKey, Validation, Algorithm};
 use oauth2::{
     AuthUrl, ClientId, ClientSecret, TokenUrl, RedirectUrl, AuthorizationCode, CsrfToken,
     basic::BasicClient, TokenResponse, reqwest::async_http_client
 };
-use oauth2::basic::BasicTokenResponse;
-use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use tracing::{info, error, debug};

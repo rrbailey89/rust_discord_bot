@@ -11,14 +11,14 @@ mod web;
 
 use crate::config::Config;
 use crate::services::database::DatabaseService;
-use crate::services::{LoggingService, MetricsService, TaskManager, RateLimiter};
+use crate::services::{LoggingService, MetricsService};
 use crate::services::cache::CacheService;
 use crate::error::Error;
 use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::{ChannelId, CreateMessage, OnlineStatus, ActivityData};
 use serenity::GatewayIntents;
 use std::sync::Arc;
-use tokio::time::{interval, Duration, sleep};
+use tokio::time::{Duration, sleep};
 use tracing::{info, warn, error, debug};
 use crate::types::ShardManagerContainer;
 use crate::types::DataContainer;

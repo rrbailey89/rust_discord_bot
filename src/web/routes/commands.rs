@@ -1,15 +1,13 @@
 // src/web/routes/commands.rs
 //! Command management routes
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest, http::StatusCode, HttpMessage};
-use serde::Serialize;
+use actix_web::{web, HttpResponse, Responder, HttpRequest, HttpMessage};
 use tracing::{error, info, debug, warn};
 
-use crate::error::Error;
 use crate::web::state::WebAppState;
 use crate::web::middleware::auth::Claims;
 use crate::web::models::command::{
-    CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest, CommandResponse
+    UpdateCommandSettingsRequest, CommandResponse
 };
 use crate::web::services::CommandService;
 use crate::web::services::GuildService;
