@@ -578,6 +578,9 @@ impl CommandService {
                 result.push(settings);
             }
         }
+        
+        // Sort the final list alphabetically by command_id
+        result.sort_by(|a, b| a.command_id.cmp(&b.command_id));
 
         Ok(result)
     }
