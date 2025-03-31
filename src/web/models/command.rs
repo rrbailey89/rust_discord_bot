@@ -86,6 +86,8 @@ pub struct CommandSettings {
     pub enabled: bool,
     /// Command configuration
     pub settings: Option<HashMap<String, serde_json::Value>>,
+    /// Discord command ID (for registered commands)
+    pub discord_command_id: Option<String>,
 }
 
 /// Request to update command settings

@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use crate::error::Error;
 use crate::services::database::DatabaseService;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, warn, error};
 use crate::web::models::command::{
     CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest,
     ConfigSchema
@@ -225,7 +225,7 @@ impl CommandService {
         // Query the guild_command_settings table
         let row = client
             .query_opt(
-                "SELECT enabled, settings
+                "SELECT enabled, settings, discord_command_id
                 FROM guild_command_settings
                 WHERE guild_id = $1 AND command_id = $2",
                 &[&guild_id, &command_id],
@@ -233,9 +233,9 @@ impl CommandService {
             .await?;
 
         // If no settings found, return default settings (enabled = true, no custom settings)
-        let (enabled, settings) = match row {
-            Some(r) => (r.get(0), r.get::<_, Option<Value>>(1)),
-            None => (true, None),
+        let (enabled, settings, discord_command_id) = match row {
+            Some(r) => (r.get(0), r.get::<_, Option<Value>>(1), r.get::<_, Option<String>>(2)),
+            None => (true, None, None),
         };
 
         Ok(CommandSettings {
@@ -244,6 +244,7 @@ impl CommandService {
             settings: settings.map(|v| {
                 serde_json::from_value(v).unwrap_or_else(|_| HashMap::new())
             }),
+            discord_command_id,
         })
     }
 
@@ -259,7 +260,7 @@ impl CommandService {
         // Check if the command exists
         let command_row = client
             .query_opt(
-                "SELECT name, description FROM commands WHERE command_id = $1 LIMIT 1",
+                "SELECT name, description, discord_name FROM commands WHERE command_id = $1 LIMIT 1",
                 &[&command_id],
             )
             .await?;
@@ -268,7 +269,8 @@ impl CommandService {
             Some(row) => {
                 let name: String = row.get(0);
                 let description: String = row.get(1);
-                (name, description)
+                let discord_name: Option<String> = row.get(2);
+                (name, description, discord_name)
             },
             None => return Err(Error::Unknown(format!("Command not found: {}", command_id))),
         };
@@ -320,28 +322,124 @@ impl CommandService {
                 .and_then(|c| c.cooldown)
         };
 
-        // Update in database
+        // Check for Discord integration
+        let discord_service = self.discord.as_ref();
+
+        // Variable to hold new Discord command ID if we register one
+        let mut new_discord_command_id: Option<String> = None;
+
+        // If the enabled state changed and Discord integration is available, update Discord
+        let enabled_changed = request.enabled.is_some() && request.enabled != Some(current.enabled);
+        
+        if enabled_changed && discord_service.is_some() {
+            let discord = discord_service.unwrap();
+            
+            if enabled {
+                // Command is being enabled - register it with Discord
+                debug!("Registering command {} with Discord for guild {}", command_id, guild_id);
+                
+                // Use discord_name if available, otherwise use the command's name
+                let cmd_name = command_info.2.unwrap_or_else(|| command_info.0.clone());
+                
+                // Create the command structure
+                let command_details = self.get_command_details(guild_id, command_id).await?;
+                
+                // Convert the options if the command has them
+                let mut options = Vec::new();
+                
+                if let Some(config_schema) = &command_details.config_schema {
+                    for opt in &config_schema.options {
+                        let discord_option_type = match opt.option_type.as_str() {
+                            "string" => 3, // STRING
+                            "integer" => 4, // INTEGER
+                            "boolean" => 5, // BOOLEAN
+                            "user" => 6,    // USER
+                            "channel" => 7, // CHANNEL
+                            "role" => 8,    // ROLE
+                            _ => 3, // Default to STRING
+                        };
+                        
+                        // Create choices for enum type
+                        let choices = if let Some(enum_values) = &opt.enum_values {
+                            enum_values.iter()
+                                .map(|ev| {
+                                    crate::web::services::discord::DiscordApplicationCommandOptionChoice {
+                                        name: ev.label.clone(),
+                                        value: serde_json::Value::String(ev.value.clone()),
+                                    }
+                                })
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
+                        
+                        options.push(crate::web::services::discord::DiscordApplicationCommandOption {
+                            option_type: discord_option_type,
+                            name: opt.name.clone(),
+                            description: opt.description.clone(),
+                            required: opt.required,
+                            choices,
+                            options: Vec::new(),
+                        });
+                    }
+                }
+                
+                // Create the command for Discord
+                let app_command = crate::web::services::discord::DiscordApplicationCommand {
+                    id: None,
+                    name: cmd_name,
+                    description: command_info.1.clone(),
+                    options,
+                };
+                
+                // Register with Discord
+                match discord.add_guild_command(&guild_id.to_string(), app_command).await {
+                    Ok(registered_command) => {
+                        // Save the Discord assigned ID
+                        if let Some(id) = registered_command.id {
+                            new_discord_command_id = Some(id);
+                            debug!("Command registered with Discord, assigned ID: {:?}", new_discord_command_id);
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to register command with Discord: {}", e);
+                        return Err(Error::Unknown(format!("Failed to register command with Discord: {}", e)));
+                    }
+                }
+            } else if let Some(discord_cmd_id) = &current.discord_command_id {
+                // Command is being disabled - remove it from Discord
+                debug!("Removing command {} from Discord for guild {}", command_id, guild_id);
+                
+                match discord.delete_guild_command(&guild_id.to_string(), discord_cmd_id).await {
+                    Ok(_) => {
+                        debug!("Command successfully removed from Discord");
+                    },
+                    Err(e) => {
+                        // Log the error but don't fail the whole operation
+                        warn!("Failed to remove command from Discord: {}. Will update database anyway.", e);
+                    }
+                }
+                
+                // We're removing the command, so set the Discord ID to null
+                new_discord_command_id = None;
+            }
+        }
+
+        // Update in database with the new Discord command ID if applicable
         client
             .execute(
-                "INSERT INTO guild_command_settings (guild_id, command_id, enabled, settings)
-                VALUES ($1, $2, $3, $4)
+                "INSERT INTO guild_command_settings (guild_id, command_id, enabled, settings, discord_command_id)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (guild_id, command_id) 
                 DO UPDATE SET 
                     enabled = EXCLUDED.enabled,
-                    settings = EXCLUDED.settings",
-                &[&guild_id, &command_id, &enabled, &settings],
+                    settings = EXCLUDED.settings,
+                    discord_command_id = COALESCE(EXCLUDED.discord_command_id, guild_command_settings.discord_command_id)",
+                &[&guild_id, &command_id, &enabled, &settings, &new_discord_command_id],
             )
             .await?;
 
         info!("Updated command settings for guild {} command {}", guild_id, command_id);
-        
-        // If the enabled state changed or we have an explicit rate limit, sync with Discord
-        let enabled_changed = request.enabled.is_some() && request.enabled != Some(current.enabled);
-        
-        if enabled_changed && self.discord.is_some() {
-            // Sync guild commands with Discord
-            self.sync_guild_commands(guild_id).await?;
-        }
         
         Ok(())
     }
@@ -536,10 +634,10 @@ impl CommandService {
                 client
                     .execute(
                         "INSERT INTO guild_command_settings 
-                         (guild_id, command_id, enabled, settings)
-                         VALUES ($1, $2, $3, $4)
+                         (guild_id, command_id, enabled, settings, discord_command_id)
+                         VALUES ($1, $2, $3, $4, $5)
                          ON CONFLICT (guild_id, command_id) DO NOTHING",
-                        &[&guild_id, &command.id, &true, &None::<serde_json::Value>],
+                        &[&guild_id, &command.id, &true, &None::<serde_json::Value>, &None::<String>],
                     )
                     .await?;
             }

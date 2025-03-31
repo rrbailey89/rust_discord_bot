@@ -959,6 +959,117 @@ impl DiscordService {
         Ok(commands)
     }
     
+    /// Add a single command to a guild
+    pub async fn add_guild_command(
+        &self,
+        guild_id: &str,
+        command: DiscordApplicationCommand
+    ) -> Result<DiscordApplicationCommand, Error> {
+        // Ensure we have an application ID
+        let app_id = match &self.application_id {
+            Some(id) => id,
+            None => {
+                error!("Cannot add guild command: application ID not set");
+                return Err(Error::Unknown("Application ID not set".to_string()));
+            }
+        };
+        
+        // Endpoint for adding a command
+        let url = format!(
+            "{}/applications/{}/guilds/{}/commands", 
+            self.api_base, 
+            app_id, 
+            guild_id
+        );
+        
+        debug!("Adding command '{}' to guild {}", command.name, guild_id);
+        
+        // Send POST request to add the command
+        let response = self.client
+            .post(&url)
+            .headers(self.auth_headers())
+            .json(&command)
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Discord API request error: {}", e);
+                Error::Unknown(format!("Discord API request error: {}", e))
+            })?;
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read response body".to_string());
+
+            error!("Discord API error adding command: Status {}, Body: {}", status, text);
+            return Err(Error::Unknown(format!("Discord API error adding command: {}", status)));
+        }
+        
+        // Parse the response to get the registered command with its ID
+        let registered_command: DiscordApplicationCommand = response.json().await.map_err(|e| {
+            error!("Failed to parse Discord add command response: {}", e);
+            Error::Unknown(format!("Failed to parse Discord add command response: {}", e))
+        })?;
+        
+        info!("Successfully added command '{}' to guild {}", command.name, guild_id);
+        Ok(registered_command)
+    }
+    
+    /// Delete a command from a guild
+    pub async fn delete_guild_command(
+        &self,
+        guild_id: &str,
+        command_id: &str
+    ) -> Result<(), Error> {
+        // Ensure we have an application ID
+        let app_id = match &self.application_id {
+            Some(id) => id,
+            None => {
+                error!("Cannot delete guild command: application ID not set");
+                return Err(Error::Unknown("Application ID not set".to_string()));
+            }
+        };
+        
+        // Endpoint for deleting a command
+        let url = format!(
+            "{}/applications/{}/guilds/{}/commands/{}", 
+            self.api_base, 
+            app_id, 
+            guild_id,
+            command_id
+        );
+        
+        debug!("Deleting command ID '{}' from guild {}", command_id, guild_id);
+        
+        // Send DELETE request
+        let response = self.client
+            .delete(&url)
+            .headers(self.auth_headers())
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Discord API request error: {}", e);
+                Error::Unknown(format!("Discord API request error: {}", e))
+            })?;
+        
+        // 204 No Content is the expected response
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read response body".to_string());
+
+            error!("Discord API error deleting command: Status {}, Body: {}", status, text);
+            return Err(Error::Unknown(format!("Discord API error deleting command: {}", status)));
+        }
+        
+        info!("Successfully deleted command ID '{}' from guild {}", command_id, guild_id);
+        Ok(())
+    }
+
     /// Sync commands for a guild based on enabled settings
     pub async fn sync_guild_commands(
         &self, 
