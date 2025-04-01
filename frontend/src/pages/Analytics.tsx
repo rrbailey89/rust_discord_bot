@@ -1,9 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom'; // Import useLocation
 import styled from 'styled-components';
-import { fetchAnalyticsData, fetchAnalyticsSummary } from '../services/api';
+import { fetchAnalyticsData, fetchAnalyticsSummary, fetchGuilds } from '../services/api'; // Added fetchGuilds
 import AnalyticsChart from '../components/analytics/AnalyticsChart';
 import AnalyticsSummary from '../components/analytics/AnalyticsSummary';
+import { Guild } from '../types'; // Import Guild type
+
+// Define types for the data we expect from the API
+// Assuming fetchAnalyticsSummary returns an array of these
+interface SummaryStat {
+  title: string;
+  value: number | string;
+  change?: number; // Optional change percentage
+}
+
+// Assuming fetchAnalyticsData returns an object with these structures
+interface CommandUsageData {
+  name: string; // e.g., month or day or command name
+  count: number; // count for that command/period
+  // Potentially other fields depending on how the backend aggregates
+}
+
+interface UserActivityData {
+  name: string; // e.g., day of the week or date
+  messages: number;
+  commands: number;
+}
+
+interface AnalyticsData {
+  commandUsage: CommandUsageData[];
+  userActivity: UserActivityData[];
+  // Add other potential data structures returned by fetchAnalyticsData
+}
+
 
 const PageContainer = styled.div`
   padding: 20px;
@@ -75,68 +105,46 @@ const ErrorMessage = styled.div`
   border-radius: 4px;
 `;
 
-// Mock data for development purposes
-const MOCK_SUMMARY_DATA = [
-  { title: 'Total Commands Used', value: 12453, change: 5.2 },
-  { title: 'Active Users', value: 387, change: 2.1 },
-  { title: 'Messages Processed', value: 24789, change: -1.3 },
-  { title: 'Rules Triggered', value: 126, change: 7.8 },
-];
-
-const MOCK_COMMAND_USAGE = [
-  { name: 'January', help: 120, ban: 45, kick: 30, mute: 80, play: 150 },
-  { name: 'February', help: 132, ban: 42, kick: 25, mute: 75, play: 165 },
-  { name: 'March', help: 141, ban: 48, kick: 32, mute: 92, play: 158 },
-  { name: 'April', help: 154, ban: 51, kick: 27, mute: 85, play: 172 },
-  { name: 'May', help: 162, ban: 49, kick: 31, mute: 79, play: 181 },
-  { name: 'June', help: 159, ban: 53, kick: 35, mute: 94, play: 169 },
-];
-
-const MOCK_USER_ACTIVITY = [
-  { name: 'Monday', messages: 430, commands: 86 },
-  { name: 'Tuesday', messages: 520, commands: 104 },
-  { name: 'Wednesday', messages: 580, commands: 116 },
-  { name: 'Thursday', messages: 540, commands: 108 },
-  { name: 'Friday', messages: 610, commands: 122 },
-  { name: 'Saturday', messages: 720, commands: 144 },
-  { name: 'Sunday', messages: 650, commands: 130 },
-];
-
 // Analytics page component
 const Analytics: React.FC = () => {
+  const location = useLocation(); // Get location object
+  const queryParams = new URLSearchParams(location.search);
+  const initialGuildId = queryParams.get('guildId') || 'all'; // Get guildId from URL or default to 'all'
+
   const [timeRange, setTimeRange] = useState('30d');
-  const [guildFilter, setGuildFilter] = useState('all');
+  const [guildFilter, setGuildFilter] = useState(initialGuildId); // Initialize with guildId from URL
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  
-  // We'll use mock data for now to demonstrate the UI
-  // In a real implementation, these would be API calls
-  
-  // Define types for our mock data
-  type SummaryData = typeof MOCK_SUMMARY_DATA;
-  
-  interface AnalyticsData {
-    commandUsage: typeof MOCK_COMMAND_USAGE;
-    userActivity: typeof MOCK_USER_ACTIVITY;
-  }
-  
+
+  // Update guildFilter if URL query param changes
+  useEffect(() => {
+    const guildIdFromUrl = queryParams.get('guildId') || 'all';
+    if (guildIdFromUrl !== guildFilter) {
+      setGuildFilter(guildIdFromUrl);
+    }
+  }, [location.search]); // Rerun effect when URL search params change
+
+  // Fetch guilds for the dropdown
+  const { data: guildsData, isLoading: guildsLoading } = useQuery<Guild[]>({
+    queryKey: ['guilds'],
+    queryFn: fetchGuilds, // Assuming fetchGuilds is imported from api.ts
+  });
+
+  const guilds = [
+    { id: 'all', name: 'All Guilds' },
+    ...(guildsData || []).map(g => ({ id: g.id, name: g.name }))
+  ];
+
   const {
     data: summaryData,
     isLoading: summaryLoading,
     error: summaryError
-  } = useQuery<SummaryData>({
+  } = useQuery<SummaryStat[]>({ // Use SummaryStat[] type
     queryKey: ['analytics-summary', guildFilter],
-    queryFn: () => {
-      // In a real implementation, this would call the API
-      // return fetchAnalyticsSummary(guildFilter !== 'all' ? guildFilter : undefined);
-      
-      // For now, return mock data with a delay to simulate API call
-      return new Promise<SummaryData>(resolve => {
-        setTimeout(() => resolve(MOCK_SUMMARY_DATA), 500);
-      });
-    }
+    queryFn: () => fetchAnalyticsSummary(guildFilter !== 'all' ? guildFilter : undefined),
+    // enabled: true, // Fetch always, whether 'all' or specific guild
   });
-  
+
   const {
     data: analyticsData,
     isLoading: analyticsLoading,
@@ -144,44 +152,43 @@ const Analytics: React.FC = () => {
   } = useQuery<AnalyticsData>({
     queryKey: ['analytics-data', guildFilter, timeRange, startDate, endDate],
     queryFn: () => {
-      // In a real implementation, this would call the API
-      /*
-      return fetchAnalyticsData({
-        guildId: guildFilter !== 'all' ? guildFilter : undefined,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-      });
-      */
+      // Prepare parameters for the API call
+      const params: { guildId?: string; startDate?: string; endDate?: string; timeRange?: string } = {};
+      if (guildFilter !== 'all') {
+        params.guildId = guildFilter;
+      }
+      if (timeRange === 'custom' && startDate && endDate) {
+        params.startDate = startDate;
+        params.endDate = endDate;
+      } else if (timeRange !== 'custom') {
+        // Pass the preset time range (e.g., '7d', '30d') if not custom
+        // The backend needs to handle these presets
+        params.timeRange = timeRange;
+      }
       
-      // For now, return mock data with a delay to simulate API call
-      return new Promise<AnalyticsData>(resolve => {
-        setTimeout(() => resolve({
-          commandUsage: MOCK_COMMAND_USAGE,
-          userActivity: MOCK_USER_ACTIVITY
-        }), 700);
-      });
-    }
+      return fetchAnalyticsData(params);
+    },
+    // enabled: true, // Fetch always, whether 'all' or specific guild
   });
-  
+
   // Handle time range change
   const handleTimeRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setTimeRange(e.target.value);
-    
+
     // Clear custom date range if a preset is selected
     if (e.target.value !== 'custom') {
       setStartDate('');
       setEndDate('');
     }
   };
-  
-  // Get guilds for the filter dropdown - would be fetched from API in real implementation
-  const guilds = [
-    { id: 'all', name: 'All Guilds' },
-    { id: '123456789', name: 'Server 1' },
-    { id: '987654321', name: 'Server 2' },
-    { id: '456123789', name: 'Server 3' },
-  ];
-  
+
+  // TODO: Add logic to derive chart data keys dynamically from fetched data
+  // For now, using placeholder keys based on previous mock data structure
+  const commandUsageKeys = analyticsData && analyticsData.commandUsage && analyticsData.commandUsage.length > 0
+    ? Object.keys(analyticsData.commandUsage[0]).filter(key => key !== 'name')
+    : [];
+  const userActivityKeys = ['messages', 'commands'];
+
   return (
     <PageContainer>
       <PageTitle>Analytics Dashboard</PageTitle>
@@ -194,10 +201,15 @@ const Analytics: React.FC = () => {
             id="guild-filter"
             value={guildFilter}
             onChange={(e) => setGuildFilter(e.target.value)}
+            disabled={guildsLoading} // Disable while loading guilds
           >
-            {guilds.map(guild => (
-              <option key={guild.id} value={guild.id}>{guild.name}</option>
-            ))}
+            {guildsLoading ? (
+              <option>Loading servers...</option>
+            ) : (
+              guilds.map(guild => (
+                <option key={guild.id} value={guild.id}>{guild.name}</option>
+              ))
+            )}
           </FilterSelect>
         </FilterGroup>
         
@@ -258,16 +270,18 @@ const Analytics: React.FC = () => {
         <>
           <AnalyticsChart
             title="Command Usage"
-            data={analyticsData.commandUsage}
-            dataKeys={['help', 'ban', 'kick', 'mute', 'play']}
+            data={analyticsData?.commandUsage || []} // Use fetched data or empty array
+            dataKeys={commandUsageKeys} // Use dynamic keys
             xAxisDataKey="name"
+            // isLoading={analyticsLoading} // Remove isLoading prop
           />
-          
+
           <AnalyticsChart
             title="User Activity"
-            data={analyticsData.userActivity}
-            dataKeys={['messages', 'commands']}
+            data={analyticsData?.userActivity || []} // Use fetched data or empty array
+            dataKeys={userActivityKeys}
             xAxisDataKey="name"
+            // isLoading={analyticsLoading} // Remove isLoading prop
           />
         </>
       )}

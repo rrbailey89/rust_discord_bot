@@ -123,6 +123,7 @@ interface GuildCardProps {
   onSettings: (guildId: string) => void;
   onCommands: (guildId: string) => void;
   onWordDetection: (guildId: string) => void;
+  onAnalytics: (guildId: string) => void; // Add onAnalytics prop
 }
 
 // Helper function to convert Discord icon hash to URL or use provided URL
@@ -138,9 +139,10 @@ const getInitial = (name: string) => name && name.length > 0 ? name.charAt(0).to
 const GuildCard: React.FC<GuildCardProps> = ({ 
   guild, 
   onManage, 
-  onSettings, 
+  onSettings,
   onCommands,
-  onWordDetection 
+  onWordDetection,
+  onAnalytics // Destructure the new prop
 }) => {
   return (
     <Card>
@@ -193,6 +195,13 @@ const GuildCard: React.FC<GuildCardProps> = ({
           onClick={() => onSettings(guild.id)}
         >
           Settings
+        </ActionButton>
+        {/* Add Analytics Button */}
+        <ActionButton
+          variant="secondary"
+          onClick={() => onAnalytics(guild.id)}
+        >
+          Analytics
         </ActionButton>
       </Actions>
     </Card>

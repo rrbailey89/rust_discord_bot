@@ -132,6 +132,10 @@ const GuildList: React.FC = () => {
     navigate(`/guilds/${guildId}/word-detection`);
   };
 
+  const handleAnalytics = (guildId: string) => {
+    navigate(`/analytics?guildId=${guildId}`); // Navigate to analytics page with guildId query param
+  };
+
   // Render loading state
   if (isLoading) {
     return (
@@ -178,6 +182,7 @@ const GuildList: React.FC = () => {
             onSettings={handleSettings}
             onCommands={handleCommands}
             onWordDetection={handleWordDetection}
+            onAnalytics={handleAnalytics} // Pass the new handler
           />
         ))
       ) : (
