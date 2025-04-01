@@ -6,7 +6,7 @@ mod state;
 mod middleware;
 mod routes;
 mod handlers;
-mod models;
+pub mod models; // Make models public
 pub mod services;
 
 pub use server::start_server;

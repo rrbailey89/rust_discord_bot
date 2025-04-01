@@ -25,6 +25,9 @@ use crate::types::DataContainer;
 use rand::Rng;
 use std::time::Instant;
 use std::path::Path;
+use crate::web::services::AnalyticsService; // Added
+use crate::web::models::analytics::LogEventRequest; // Added
+use std::collections::HashMap; // Added
 
 #[derive(Clone, Debug)]
 pub struct Data {
@@ -390,7 +393,47 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                         }
                         
                         // Command is not on cooldown, record this usage
-                        let _ = data.command_cooldown.record_command_usage(guild_id, &command_name, user_id).await;
+                        if let Err(e) = data.command_cooldown.record_command_usage(guild_id, &command_name, user_id).await {
+                            warn!("Failed to record command usage for cooldown: {}", e);
+                            // Continue anyway
+                        }
+
+                        // Log analytics event for command usage
+                        let analytics_service = AnalyticsService::new(data.database.clone());
+                        let mut event_data = HashMap::new();
+                        event_data.insert("command_name".to_string(), serde_json::Value::String(command_name.clone()));
+
+                        let log_request = LogEventRequest {
+                            event_type: "command_used".to_string(),
+                            user_id: Some(user_id),
+                            guild_id: Some(guild_id),
+                            event_data: Some(event_data),
+                        };
+
+                        // Spawn a task to log the event without blocking the command
+                        tokio::spawn(async move {
+                            if let Err(e) = analytics_service.log_event(&log_request).await {
+                                error!("Failed to log command_used analytics event: {}", e);
+                            }
+                        });
+                    } else {
+                         // Log global command usage (no guild_id)
+                         let analytics_service = AnalyticsService::new(data.database.clone());
+                         let mut event_data = HashMap::new();
+                         event_data.insert("command_name".to_string(), serde_json::Value::String(command_name.clone()));
+
+                         let log_request = LogEventRequest {
+                             event_type: "command_used".to_string(),
+                             user_id: Some(user_id),
+                             guild_id: None, // No guild ID for global commands
+                             event_data: Some(event_data),
+                         };
+
+                         tokio::spawn(async move {
+                             if let Err(e) = analytics_service.log_event(&log_request).await {
+                                 error!("Failed to log global command_used analytics event: {}", e);
+                             }
+                         });
                     }
                 })
             },

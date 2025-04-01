@@ -1,11 +1,19 @@
+// src/events.rs (Updated with Analytics Logging)
 use crate::emoji_reaction::handle_message;
 use crate::error::Error;
 use crate::Data;
-use poise::serenity_prelude::{ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId, MessageId, Message, Interaction, Reaction, ReactionType, CreateEmbedAuthor};
+use poise::serenity_prelude::{
+    ChannelId, Context, CreateEmbed, CreateEmbedFooter, CreateMessage, FullEvent, Guild, GuildId,
+    Member, Message, MessageId, Interaction, Reaction, ReactionType, CreateEmbedAuthor, User,
+};
 use poise::FrameworkContext;
 use crate::commands::admin::add_role_buttons::handle_role_button;
 use regex::Regex;
 use crate::DataContainer;
+use crate::web::services::AnalyticsService; // Added
+use crate::web::models::analytics::LogEventRequest; // Added
+use std::collections::HashMap; // Added
+use tracing::{error, warn, info}; // Added info
 
 pub async fn handle_event(
     ctx: &Context,
@@ -17,8 +25,15 @@ pub async fn handle_event(
         FullEvent::GuildCreate { guild, .. } => {
             handle_guild_create(ctx, guild, data).await?;
         }
+        // Revert GuildDelete pattern match to original
         FullEvent::GuildDelete { incomplete, .. } => {
             handle_guild_delete(ctx, incomplete.id, data).await?;
+        }
+        FullEvent::GuildMemberAddition { new_member } => {
+            handle_guild_member_addition(ctx, new_member, data).await?;
+        }
+        FullEvent::GuildMemberRemoval { guild_id, user, member_data_if_available: _ } => {
+            handle_guild_member_removal(ctx, guild_id, user, data).await?;
         }
         FullEvent::MessageDelete { channel_id, deleted_message_id, guild_id, .. } => {
             handle_message_delete(ctx, channel_id, *deleted_message_id, *guild_id, data).await?;
@@ -28,10 +43,30 @@ pub async fn handle_event(
         }
         FullEvent::Message { new_message } => {
             if !new_message.author.bot {
+                // Log message_sent event
+                let analytics_service = AnalyticsService::new(data.database.clone());
+                let mut event_data = HashMap::new();
+                event_data.insert("channel_id".to_string(), serde_json::Value::String(new_message.channel_id.to_string()));
+                event_data.insert("message_length".to_string(), serde_json::Value::Number(serde_json::Number::from(new_message.content.len())));
+
+                let log_request = LogEventRequest {
+                    event_type: "message_sent".to_string(),
+                    user_id: Some(new_message.author.id.get() as i64),
+                    guild_id: new_message.guild_id.map(|g| g.get() as i64),
+                    event_data: Some(event_data),
+                };
+                // Spawn task to avoid blocking event handler
+                tokio::spawn(async move {
+                    if let Err(e) = analytics_service.log_event(&log_request).await {
+                        error!("Failed to log message_sent analytics event: {}", e);
+                    }
+                });
+
+                // Existing message handling logic
                 handle_message(ctx, framework, data, new_message).await?;
                 handle_message_for_leveling(ctx, new_message, data).await?;
                 process_url_rule(ctx, data, new_message).await?;
-                
+
                 // Check if this is the unavailability channel and delete non-bot messages
                 if let Some(guild_id) = new_message.guild_id {
                     if let Some(unavailability_channel_id) = data.database.fetch_unavailability_channel(guild_id.get() as i64).await? {
@@ -58,24 +93,69 @@ pub async fn handle_event(
     Ok(())
 }
 
+// --- Event Handlers ---
+
+async fn handle_guild_member_addition(ctx: &Context, new_member: &Member, data: &Data) -> Result<(), Error> {
+    info!("User {} joined guild {}", new_member.user.name, new_member.guild_id);
+
+    // Log analytics event
+    let analytics_service = AnalyticsService::new(data.database.clone());
+    let log_request = LogEventRequest {
+        event_type: "user_joined".to_string(),
+        user_id: Some(new_member.user.id.get() as i64),
+        guild_id: Some(new_member.guild_id.get() as i64),
+        event_data: None, // No extra data needed for this event type
+    };
+    tokio::spawn(async move {
+        if let Err(e) = analytics_service.log_event(&log_request).await {
+            error!("Failed to log user_joined analytics event: {}", e);
+        }
+    });
+
+    // Potentially send a welcome message, etc.
+
+    Ok(())
+}
+
+async fn handle_guild_member_removal(ctx: &Context, guild_id: &GuildId, user: &User, data: &Data) -> Result<(), Error> {
+    info!("User {} left guild {}", user.name, guild_id);
+
+    // Log analytics event
+    let analytics_service = AnalyticsService::new(data.database.clone());
+    let log_request = LogEventRequest {
+        event_type: "user_left".to_string(),
+        user_id: Some(user.id.get() as i64),
+        guild_id: Some(guild_id.get() as i64),
+        event_data: None, // No extra data needed for this event type
+    };
+    tokio::spawn(async move {
+        if let Err(e) = analytics_service.log_event(&log_request).await {
+            error!("Failed to log user_left analytics event: {}", e);
+        }
+    });
+
+    Ok(())
+}
+
+
 async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Result<(), Error> {
     // Log guild creation
-    tracing::info!("Guild Create event received for: {} (ID: {})", guild.name, guild.id);
+    info!("Guild Create event received for: {} (ID: {})", guild.name, guild.id);
 
     // Store guild info in the database
     data.database.store_guild_info(guild).await?;
 
     // Store guild channels in the database
     data.database.store_guild_channels(guild).await?;
-    
+
     // Initialize command settings for this guild
     let command_service = crate::web::services::CommandService::new(data.database.clone());
     match command_service.initialize_guild_command_settings(guild.id.get() as i64).await {
         Ok(_) => {
-            tracing::info!("Initialized command settings for guild {}", guild.id);
+            info!("Initialized command settings for guild {}", guild.id);
         },
         Err(e) => {
-            tracing::error!("Failed to initialize command settings for guild {}: {}", guild.id, e);
+            error!("Failed to initialize command settings for guild {}: {}", guild.id, e);
         }
     }
 
@@ -88,12 +168,12 @@ async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Resul
     let guild_roles = guild.roles.clone();
 
     tokio::spawn(async move {
-        tracing::info!("Starting background task to fetch members for guild {}", guild_id_i64);
+        info!("Starting background task to fetch members for guild {}", guild_id_i64);
 
         // Fetch up to 1000 members
         match guild_id_clone.members(&ctx_clone.http, None, None).await {
             Ok(members) => {
-                tracing::info!("Fetched {} members for guild {}", members.len(), guild_id_i64);
+                info!("Fetched {} members for guild {}", members.len(), guild_id_i64);
 
                 // Convert members to JSON format expected by store_guild_members
                 let members_json: Vec<serde_json::Value> = members.iter().map(|m| {
@@ -121,15 +201,15 @@ async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Resul
                 // Insert into database
                 match database.store_guild_members(guild_id_i64, &members_json).await {
                     Ok(count) => {
-                        tracing::info!("Successfully stored {} members for guild {}", count, guild_id_i64);
+                        info!("Successfully stored {} members for guild {}", count, guild_id_i64);
                     },
                     Err(e) => {
-                        tracing::error!("Failed to store members for guild {}: {}", guild_id_i64, e);
+                        error!("Failed to store members for guild {}: {}", guild_id_i64, e);
                     }
                 }
             },
             Err(e) => {
-                tracing::error!("Failed to fetch members for guild {}: {}", guild_id_i64, e);
+                error!("Failed to fetch members for guild {}: {}", guild_id_i64, e);
             }
         }
     });
@@ -139,7 +219,7 @@ async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Resul
 
 async fn handle_guild_delete(_ctx: &Context, guild_id: GuildId, data: &Data) -> Result<(), Error> {
     // Log guild deletion
-    tracing::info!("Bot has left the guild with ID: {}", guild_id);
+    info!("Bot has left the guild with ID: {}", guild_id);
 
     // Remove guild info from the database
     data.database.remove_guild_info(guild_id.get() as i64).await?;
@@ -273,6 +353,29 @@ async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), E
         return Ok(()); // Ignore reactions from bots
     }
 
+    // Log reaction_added event
+    let analytics_service = {
+        let data_read = ctx.data.read().await;
+        AnalyticsService::new(data_read.get::<DataContainer>().expect("Expected DataContainer in TypeMap").database.clone())
+    };
+    let mut event_data = HashMap::new();
+    event_data.insert("channel_id".to_string(), serde_json::Value::String(reaction.channel_id.to_string()));
+    event_data.insert("message_id".to_string(), serde_json::Value::String(reaction.message_id.to_string()));
+    event_data.insert("emoji".to_string(), serde_json::Value::String(reaction.emoji.to_string()));
+
+    let log_request = LogEventRequest {
+        event_type: "reaction_added".to_string(),
+        user_id: Some(user.id.get() as i64),
+        guild_id: reaction.guild_id.map(|g| g.get() as i64),
+        event_data: Some(event_data),
+    };
+    tokio::spawn(async move {
+        if let Err(e) = analytics_service.log_event(&log_request).await {
+            error!("Failed to log reaction_added analytics event: {}", e);
+        }
+    });
+
+
     if let Some(guild_id) = reaction.guild_id {
         let data = {
             let data_read = ctx.data.read().await;
@@ -327,7 +430,8 @@ async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), E
                     _ => "Unknown Emoji".to_string(),
                 };
 
-                let user = reaction.user(&ctx.http).await?;
+                // We already fetched the user above, no need to fetch again
+                // let user = reaction.user(&ctx.http).await?;
                 let timestamp = chrono::Utc::now().timestamp();
 
                 let embed = CreateEmbed::default()
