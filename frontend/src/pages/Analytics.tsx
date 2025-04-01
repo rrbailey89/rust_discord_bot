@@ -189,11 +189,11 @@ const Analytics: React.FC = () => {
     { title: 'Active Users', value: summaryData.active_users },
     { title: 'Commands Used', value: summaryData.commands_used },
     { title: 'Messages Sent', value: summaryData.message_count },
-    // Add more stats derived from events_by_type if needed
-    ...Object.entries(summaryData.events_by_type).map(([key, value]) => ({
+    // Add more stats derived from events_by_type if needed, checking if it exists first
+    ...(summaryData.events_by_type ? Object.entries(summaryData.events_by_type).map(([key, value]) => ({
       title: `Events: ${key}`, // Example transformation
       value: value
-    }))
+    })) : [])
   ] : [];
 
   // TODO: Add logic to derive chart data keys dynamically from fetched data
