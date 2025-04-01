@@ -78,15 +78,15 @@ pub struct GuildSettings {
     /// Whether emoji reactions are enabled
     pub emoji_reactions_enabled: Option<bool>,
     /// Channel ID for level up notifications
-    pub level_up_channel_id: Option<String>,
+    pub level_up_channel_id: Option<i64>, // Changed to i64
     /// Channel ID for warning notifications
-    pub warn_channel_id: Option<String>,
+    pub warn_channel_id: Option<i64>, // Changed to i64
     /// URL rule setting for the guild
     pub url_rule: Option<String>,
     /// Channel ID for delete log
-    pub delete_log_channel_id: Option<String>,
+    pub delete_log_channel_id: Option<i64>, // Changed to i64
     /// Channel ID for reaction log
-    pub reaction_log_channel_id: Option<String>,
+    pub reaction_log_channel_id: Option<i64>, // Changed to i64
 }
 
 /// Request to update guild settings

@@ -5,7 +5,9 @@ use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::guild::{GuildSettings, UpdateGuildSettingsRequest};
 use crate::web::models::auth::Guild;
-use tracing::{debug, error, info};
+use serde_json::Value as JsonValue; // Import serde_json Value
+use tokio_postgres::error::SqlState; // Import SqlState for error handling
+use tracing::{debug, error, info, warn}; // Added warn
 
 /// Guild service for database operations
 pub struct GuildService {
@@ -23,36 +25,69 @@ impl GuildService {
     pub async fn get_guild_settings(&self, guild_id: i64) -> Result<GuildSettings, Error> {
         let client = self.db.get_client().await?;
 
-        // Query relevant settings from multiple tables
-        let row = client
-            .query_one(
-                "SELECT 
-                    COALESCE((SELECT enabled FROM guild_settings WHERE guild_id = $1 AND setting = 'emoji_reactions'), true) as emoji_reactions_enabled,
+        // Query relevant settings from guild_settings and guild_channels
+        let row_opt = client
+            .query_opt( // Use query_opt to handle missing guild settings gracefully
+                "SELECT
+                    gs.settings, -- Fetch the entire JSONB settings object
                     (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'level_up') as level_up_channel_id,
                     (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'warn') as warn_channel_id,
-                    (SELECT rule FROM guild_settings WHERE guild_id = $1 AND setting = 'url_rule') as url_rule,
                     (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'delete_log') as delete_log_channel_id,
-                    (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'reaction_log') as reaction_log_channel_id",
+                    (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'reaction_log') as reaction_log_channel_id
+                 FROM guild_settings gs
+                 WHERE gs.guild_id = $1",
                 &[&guild_id],
             )
-            .await?;
+            .await?; // Propagate other DB errors
 
-        // Map the result to a GuildSettings object with all required fields
-        let settings = GuildSettings {
-            guild_id: guild_id,
-            prefix: None,
-            mod_role_id: None,
-            admin_role_id: None,
-            settings: None,
-            emoji_reactions_enabled: Some(row.get::<_, bool>(0)),
-            level_up_channel_id: row.get::<_, Option<String>>(1),
-            warn_channel_id: row.get::<_, Option<String>>(2),
-            url_rule: row.get::<_, Option<String>>(3),
-            delete_log_channel_id: row.get::<_, Option<String>>(4),
-            reaction_log_channel_id: row.get::<_, Option<String>>(5),
+        // Extract data if row exists, otherwise use defaults
+        let (settings_json, lvl_chan, warn_chan, del_log_chan, react_log_chan) = match row_opt {
+            Some(row) => {
+                let json_val = row.get::<_, Option<JsonValue>>(0).unwrap_or_else(|| serde_json::json!({}));
+                // Read channel IDs as Option<i64>
+                let lvl = row.get::<_, Option<i64>>(1);
+                let warn_ch = row.get::<_, Option<i64>>(2);
+                let del_log = row.get::<_, Option<i64>>(3);
+                let react_log = row.get::<_, Option<i64>>(4);
+                // Return the variables with the correct Option<i64> type
+                (json_val, lvl, warn_ch, del_log, react_log)
+            },
+            None => {
+                // Guild not found in guild_settings, return defaults
+                debug!("No settings found for guild_id {}. Returning defaults.", guild_id);
+                (serde_json::json!({}), None, None, None, None)
+            }
         };
 
-        Ok(settings)
+        // Extract emoji_reactions_enabled, default to true if missing or not a boolean
+        let emoji_reactions_enabled = settings_json
+            .get("emoji_reactions_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true); // Default to true
+
+        // Extract url_rule from settings JSONB
+        let url_rule = settings_json
+            .get("url_rule")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        // Map the result to a GuildSettings object
+        let guild_settings_result = GuildSettings {
+            guild_id,
+            prefix: None, // Assuming these are not in the 'settings' JSONB yet
+            mod_role_id: None,
+            admin_role_id: None,
+            settings: Some(settings_json), // Store the raw JSONB
+            emoji_reactions_enabled: Some(emoji_reactions_enabled), // Use extracted value
+            // Assign the correctly typed variables
+            level_up_channel_id: lvl_chan,
+            warn_channel_id: warn_chan,
+            url_rule, // Use extracted value from JSONB
+            delete_log_channel_id: del_log_chan,
+            reaction_log_channel_id: react_log_chan,
+        };
+
+        Ok(guild_settings_result)
     }
 
     /// Update guild settings in the database
@@ -62,42 +97,51 @@ impl GuildService {
         request: &UpdateGuildSettingsRequest,
     ) -> Result<(), Error> {
         let client = self.db.get_client().await?;
-        
-        // Update emoji reactions setting if provided
-        if let Some(emoji_reactions_enabled) = request.emoji_reactions_enabled {
-            client
-                .execute(
-                    "INSERT INTO guild_settings (guild_id, setting, enabled) 
-                    VALUES ($1, 'emoji_reactions', $2)
-                    ON CONFLICT (guild_id, setting) 
-                    DO UPDATE SET enabled = $2",
-                    &[&guild_id, &emoji_reactions_enabled],
-                )
-                .await?;
 
-            debug!(
-                "Updated emoji reactions setting for guild {}: {}",
-                guild_id, emoji_reactions_enabled
-            );
+        // Fetch current settings JSONB to merge updates
+        let current_settings_row = client
+            .query_opt("SELECT settings FROM guild_settings WHERE guild_id = $1", &[&guild_id])
+            .await?;
+
+        let mut current_settings: JsonValue = current_settings_row
+            .map(|row| row.get::<_, Option<JsonValue>>(0).unwrap_or_else(|| serde_json::json!({})))
+            .unwrap_or_else(|| serde_json::json!({}));
+
+        // Ensure current_settings is a map
+        let settings_map = match current_settings.as_object_mut() {
+            Some(map) => map,
+            None => {
+                // If it's not an object (e.g., null or other type), reset to empty object
+                warn!("Guild {} settings column was not a JSON object. Resetting.", guild_id);
+                current_settings = serde_json::json!({});
+                current_settings.as_object_mut().unwrap() // Should be safe now
+            }
+        };
+
+        // Update emoji reactions setting if provided
+        if let Some(enabled) = request.emoji_reactions_enabled {
+            settings_map.insert("emoji_reactions_enabled".to_string(), serde_json::json!(enabled));
+            debug!("Prepared emoji reactions update for guild {}: {}", guild_id, enabled);
         }
 
         // Update URL rule setting if provided
-        if let Some(url_rule) = &request.url_rule {
-            client
-                .execute(
-                    "INSERT INTO guild_settings (guild_id, setting, rule) 
-                    VALUES ($1, 'url_rule', $2)
-                    ON CONFLICT (guild_id, setting) 
-                    DO UPDATE SET rule = $2",
-                    &[&guild_id, url_rule],
-                )
-                .await?;
-
-            debug!(
-                "Updated URL rule setting for guild {}: {}",
-                guild_id, url_rule
-            );
+        if let Some(rule) = &request.url_rule {
+            settings_map.insert("url_rule".to_string(), serde_json::json!(rule));
+             debug!("Prepared URL rule update for guild {}: {}", guild_id, rule);
         }
+
+        // --- Persist updated settings JSONB ---
+        // Use INSERT ... ON CONFLICT to handle cases where the guild might not exist yet
+        client
+            .execute(
+                "INSERT INTO guild_settings (guild_id, settings)
+                 VALUES ($1, $2)
+                 ON CONFLICT (guild_id) DO UPDATE
+                 SET settings = $2", // Update the entire settings object
+                &[&guild_id, &current_settings],
+            )
+            .await?;
+        debug!("Persisted updated settings JSONB for guild {}", guild_id);
 
         // Update level up channel if provided
         if let Some(channel_id) = &request.level_up_channel_id {

@@ -52,26 +52,37 @@ export interface WordDetectionRule {
   updated_at: string;
 }
 
-// Settings types
+// Settings types - Updated to match backend structure
 export interface GuildSettings {
-  guild_id?: string;
-  id?: string;
-  name?: string;
-  settings?: Record<string, any>;
-  prefix: string;
-  logChannelId: string;
-  moderationEnabled: boolean;
-  autoModeration: {
-    enabled: boolean;
-    filterLinks: boolean;
-    filterInvites: boolean;
-    filterProfanity: boolean;
-  };
-  welcomeMessage: {
-    enabled: boolean;
-    channelId: string;
-    message: string;
-  };
+  guild_id: number; // Changed from string? to number
+  prefix?: string | null; // Changed to optional string or null
+  mod_role_id?: number | null; // Changed to optional number or null
+  admin_role_id?: number | null; // Changed to optional number or null
+  settings?: { // Nested settings object
+    autoModeration?: { // Optional nested structure
+      enabled?: boolean;
+      filterLinks?: boolean;
+      filterInvites?: boolean;
+      filterProfanity?: boolean;
+    };
+    welcomeMessage?: { // Optional nested structure
+      enabled?: boolean;
+      channelId?: number | null; // Changed to optional number or null
+      message?: string;
+    };
+    // Add other potential nested settings here if needed
+    [key: string]: any; // Allow other arbitrary settings
+  } | null;
+  emoji_reactions_enabled?: boolean | null; // Added new field
+  level_up_channel_id?: number | null; // Added new field, type number
+  warn_channel_id?: number | null; // Added new field, type number
+  url_rule?: string | null; // Added new field
+  delete_log_channel_id?: number | null; // Added new field, type number
+  reaction_log_channel_id?: number | null; // Added new field, type number
+
+  // Frontend-specific state (might need adjustment based on how backend sends data)
+  logChannelId?: string; // Kept for now, might need removal/update
+  moderationEnabled?: boolean; // Kept for now, might need removal/update
 }
 
 // Analytics types

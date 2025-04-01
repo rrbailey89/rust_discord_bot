@@ -96,11 +96,7 @@ impl DatabaseService {
             // Levels
             ("get_user_level", "INSERT INTO user_levels (guild_id, user_id, level, experience) VALUES ($1, $2, 1, 0) ON CONFLICT (guild_id, user_id) DO UPDATE SET guild_id = EXCLUDED.guild_id RETURNING level, experience"),
             ("update_user_experience", "UPDATE user_levels SET experience = $3 WHERE guild_id = $1 AND user_id = $2 RETURNING level, experience"),
-            
-            // Guild settings
-            ("fetch_emoji_reactions_enabled", "SELECT emoji_reactions_enabled FROM guild_emoji_settings WHERE guild_id = $1"),
-            ("store_emoji_reactions_enabled", "INSERT INTO guild_emoji_settings (guild_id, emoji_reactions_enabled) VALUES ($1, $2) ON CONFLICT (guild_id) DO UPDATE SET emoji_reactions_enabled = EXCLUDED.emoji_reactions_enabled"),
-            
+
             // Unavailability
             ("store_unavailability_channel", "INSERT INTO unavailability_channels (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id"),
             ("fetch_unavailability_channel", "SELECT channel_id FROM unavailability_channels WHERE guild_id = $1"),
