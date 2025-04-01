@@ -95,6 +95,25 @@ export interface AnalyticsEvent {
   timestamp: string;
 }
 
+// Command usage statistics (as returned by summary endpoints)
+export interface CommandUsage {
+  command_id: string;
+  command_name: string;
+  count: number;
+}
+
+// Analytics summary for a guild
+export interface GuildAnalyticsSummary {
+  guild_id: string; // Use string to match other ID types in frontend
+  period: string;
+  active_users: number;
+  commands_used: number;
+  top_commands: CommandUsage[];
+  message_count: number;
+  events_by_type: Record<string, number>; // Use Record for HashMap equivalent
+}
+
+
 // API Error type
 export interface ApiError {
   message: string;

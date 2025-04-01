@@ -5,10 +5,10 @@ import styled from 'styled-components';
 import { fetchAnalyticsData, fetchAnalyticsSummary, fetchGuilds } from '../services/api'; // Added fetchGuilds
 import AnalyticsChart from '../components/analytics/AnalyticsChart';
 import AnalyticsSummary from '../components/analytics/AnalyticsSummary';
-import { Guild } from '../types'; // Import Guild type
+import { Guild, GuildAnalyticsSummary, CommandUsage } from '../types'; // Import Guild, GuildAnalyticsSummary, CommandUsage types
 
 // Define types for the data we expect from the API
-// Assuming fetchAnalyticsSummary returns an array of these
+// SummaryStat is now defined in AnalyticsSummary component, but we'll keep it here for clarity if needed elsewhere
 interface SummaryStat {
   title: string;
   value: number | string;
@@ -16,6 +16,7 @@ interface SummaryStat {
 }
 
 // Assuming fetchAnalyticsData returns an object with these structures
+// Note: CommandUsageData might need adjustment based on actual API response for charts
 interface CommandUsageData {
   name: string; // e.g., month or day or command name
   count: number; // count for that command/period
@@ -136,13 +137,14 @@ const Analytics: React.FC = () => {
   ];
 
   const {
-    data: summaryData,
+    data: summaryData, // This will be GuildAnalyticsSummary | undefined
     isLoading: summaryLoading,
     error: summaryError
-  } = useQuery<SummaryStat[]>({ // Use SummaryStat[] type
-    queryKey: ['analytics-summary', guildFilter],
-    queryFn: () => fetchAnalyticsSummary(guildFilter !== 'all' ? guildFilter : undefined),
-    // enabled: true, // Fetch always, whether 'all' or specific guild
+  } = useQuery<GuildAnalyticsSummary>({ // Expect GuildAnalyticsSummary
+    // Summary likely doesn't depend on time range, only guild filter
+    queryKey: ['analytics-summary', guildFilter], 
+    queryFn: () => fetchAnalyticsSummary(guildFilter !== 'all' ? guildFilter : undefined), // Pass only guildId or undefined
+    // enabled: true, // Fetch always
   });
 
   const {
@@ -182,12 +184,25 @@ const Analytics: React.FC = () => {
     }
   };
 
+  // Transform summaryData into the format expected by AnalyticsSummary component
+  const transformedSummaryStats: SummaryStat[] = summaryData ? [
+    { title: 'Active Users', value: summaryData.active_users },
+    { title: 'Commands Used', value: summaryData.commands_used },
+    { title: 'Messages Sent', value: summaryData.message_count },
+    // Add more stats derived from events_by_type if needed
+    ...Object.entries(summaryData.events_by_type).map(([key, value]) => ({
+      title: `Events: ${key}`, // Example transformation
+      value: value
+    }))
+  ] : [];
+
   // TODO: Add logic to derive chart data keys dynamically from fetched data
-  // For now, using placeholder keys based on previous mock data structure
-  const commandUsageKeys = analyticsData && analyticsData.commandUsage && analyticsData.commandUsage.length > 0
-    ? Object.keys(analyticsData.commandUsage[0]).filter(key => key !== 'name')
+  // This needs adjustment based on the actual structure of analyticsData.commandUsage
+  const commandUsageKeys = analyticsData?.commandUsage?.[0]
+    ? Object.keys(analyticsData.commandUsage[0]).filter(key => key !== 'name' && key !== 'command_id') // Exclude non-numeric/category keys
     : [];
   const userActivityKeys = ['messages', 'commands'];
+
 
   return (
     <PageContainer>
@@ -261,10 +276,10 @@ const Analytics: React.FC = () => {
       
       {/* Summary stats */}
       <AnalyticsSummary
-        stats={summaryData || []}
+        stats={transformedSummaryStats} // Use the transformed data
         isLoading={summaryLoading}
       />
-      
+
       {/* Charts */}
       {analyticsData && (
         <>
