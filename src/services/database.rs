@@ -526,12 +526,21 @@ impl DatabaseService {
         let client = self.pool.get().await?;
         let row = client
             .query_opt(
-                "SELECT emoji_reactions_enabled FROM guild_emoji_settings WHERE guild_id = $1",
+                "SELECT settings ->> 'emoji_reactions_enabled' FROM guild_settings WHERE guild_id = $1",
                 &[&guild_id],
             )
             .await?;
 
-        Ok(row.map(|r| r.get(0)).unwrap_or(true)) // Explicitly return true if no record is found
+        match row {
+            Some(row) => {
+                let enabled_str: Option<String> = row.get(0);
+                match enabled_str {
+                    Some(s) => s.parse::<bool>().map_err(|e| Error::Unknown(format!("Failed to parse emoji_reactions_enabled: {}", e))),
+                    None => Ok(true), // Default to true if setting is not present
+                }
+            }
+            None => Ok(true), // Default to true if no record is found
+        }
     }
 
     // Store or update the emoji reactions enabled/disabled setting for a guild
@@ -539,9 +548,10 @@ impl DatabaseService {
         let client = self.pool.get().await?;
         client
             .execute(
-                "INSERT INTO guild_emoji_settings (guild_id, emoji_reactions_enabled)
-                 VALUES ($1, $2)
-                 ON CONFLICT (guild_id) DO UPDATE SET emoji_reactions_enabled = EXCLUDED.emoji_reactions_enabled",
+                "INSERT INTO guild_settings (guild_id, settings)
+                 VALUES ($1, jsonb_build_object('emoji_reactions_enabled', $2))
+                 ON CONFLICT (guild_id) DO UPDATE SET
+                 settings = jsonb_set(guild_settings.settings, '{emoji_reactions_enabled}', to_jsonb($2))",
                 &[&guild_id, &enabled],
             )
             .await?;
