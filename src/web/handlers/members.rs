@@ -95,36 +95,19 @@ pub async fn get_guild_members(
                 }
             };
             
-            // Convert the members to JSON for storage
-            let members_json = match serde_json::to_value(&members) {
-                Ok(json) => {
-                    if let Some(members_array) = json.as_array() {
-                        // Extract just the array part for storage
-                        serde_json::to_value(members_array).unwrap_or(serde_json::Value::Array(vec![]))
-                    } else {
-                        serde_json::Value::Array(vec![])
-                    }
+            // Store fetched members in the database (members is now Vec<Member>)
+            match state.database().store_guild_members(guild_id_i64, &members).await { // Pass &members directly
+                Ok(count) => {
+                    info!("Stored {} members for guild {}", count, guild_id);
                 },
                 Err(e) => {
-                    error!("Failed to serialize members to JSON: {}", e);
-                    serde_json::Value::Array(vec![])
-                }
-            };
-            
-            // Store in database if we have valid JSON
-            if let Some(members_array) = members_json.as_array() {
-                match state.database().store_guild_members(guild_id_i64, members_array).await {
-                    Ok(count) => {
-                        info!("Stored {} members for guild {}", count, guild_id);
-                    },
-                    Err(e) => {
-                        error!("Error storing guild members: {}", e);
-                    }
+                    error!("Error storing guild members: {}", e);
+                    // Note: We continue to return success even if storage fails, as per original logic.
                 }
             }
             
             // Return the members to the caller regardless of storage success
-            success(members)
+            success(members) // members is Vec<Member>
         },
         Err(e) => {
             error!("Error fetching guild members: {}", e);

@@ -145,6 +145,7 @@ pub struct DiscordChannel {
 }
 
 use crate::services::cache::CacheService;
+use poise::serenity_prelude::Member; // Import Serenity Member
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -730,7 +731,7 @@ impl DiscordService {
     }
 
     /// Get members of a specific guild
-    pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Vec<DiscordGuildMember>, Error> {
+    pub async fn get_guild_members(&self, guild_id: &str, limit: usize) -> Result<Vec<Member>, Error> { // Changed return type
         let url = format!("{}/guilds/{}/members?limit={}", self.api_base, guild_id, limit);
         debug!("Fetching guild members from Discord API: {}", url);
 
@@ -755,8 +756,8 @@ impl DiscordService {
             return Err(Error::Unknown(format!("Discord API error: {}", status)));
         }
 
-        // Parse the response
-        let members: Vec<DiscordGuildMember> = response.json().await.map_err(|e| {
+        // Parse the response using Serenity's Member struct
+        let members: Vec<Member> = response.json().await.map_err(|e| { // Changed deserialization type
             error!("Failed to parse Discord guild members response: {}", e);
             Error::Unknown(format!("Failed to parse Discord guild members response: {}", e))
         })?;

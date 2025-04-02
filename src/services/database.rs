@@ -3,7 +3,7 @@ use crate::commands::utility::reminder::{Frequency, Reminder};
 use crate::error::Error;
 use crate::config::database::DatabaseConfig;
 use crate::services::migrations::Migrations;
-use chrono::{Datelike, Utc, Weekday, NaiveDate};
+use chrono::{Datelike, Utc, Weekday, NaiveDate, DateTime}; // Added DateTime
 use chrono_tz::America::Los_Angeles;
 use poise::serenity_prelude::{ChannelType, Guild, UserId};
 use std::str::FromStr;
@@ -15,6 +15,7 @@ use serde_json::Value;
 use dashmap::DashMap;
 use futures::future::BoxFuture;
 use std::path::Path;
+use poise::serenity_prelude::{Member, RoleId}; // Added Member, RoleId
 
 /// Health check status for the database connection pool
 #[derive(Debug, Clone)]
@@ -1108,104 +1109,76 @@ impl DatabaseService {
         Ok(())
     }
     
-    /// Store guild member information in the database
+    /// Store guild member information in the database using Member structs
     pub async fn store_guild_members(
         &self,
         guild_id: i64,
-        members: &[serde_json::Value],
+        members: &[Member], // Changed to accept &[Member]
     ) -> Result<usize, Error> {
         let client = self.pool.get().await?;
         let mut stored_count = 0;
-        
-        for member in members {
-            // Extract member data from JSON
-            if let (Some(user), Some(user_id)) = (
-                member.get("user"),
-                member.get("user").and_then(|u| u.get("id")).and_then(|id| id.as_str())
-            ) {
-                // Parse user ID to i64
-                if let Ok(user_id_i64) = user_id.parse::<i64>() {
-                    // Extract other member fields
-                    let nickname = member.get("nick").and_then(|n| n.as_str());
-                    
-                    // Instead of storing roles as JSONB, parse them into a Vec<String> to store in the text[] column.
-                    let roles_array = member
-                        .get("roles")
-                        .and_then(|r| r.as_array());
 
-                    // Store the role IDs as strings
-                    let role_names: Vec<String> = roles_array
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|role_val| role_val.as_str())
-                                .map(|s| s.to_string())
-                                .collect()
-                        })
-                        .unwrap_or_else(|| Vec::new());
-                    
-                    // Attempt to parse joined_at as an ISO 8601 timestamp and store as timestamptz.
-                    use chrono::{DateTime, Utc};
-                    let joined_at_str = member.get("joined_at").and_then(|j| j.as_str()).unwrap_or("");
-                    let joined_at_dt = match DateTime::parse_from_rfc3339(joined_at_str) {
-                        Ok(dt) => Some(dt.with_timezone(&Utc)),
-                        Err(_) => None,
-                    };
-                    
-                    // Convert JSON roles to string
-                    
-                    // Store in database
-                    // Now store a text[] instead of JSONB
-                    // Now bind joined_at_dt as a timestamptz param (Option<DateTime<Utc>>)
-                    match client.execute(
-                        "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
-                         VALUES ($1, $2, $3, $4, $5)
-                         ON CONFLICT (guild_id, user_id)
-                         DO UPDATE SET
-                            nickname = EXCLUDED.nickname,
-                            roles = EXCLUDED.roles,
-                            joined_at = EXCLUDED.joined_at",
-                        &[
-                            &guild_id,
-                            &user_id_i64,
-                            &nickname.unwrap_or_default(),
-                            &role_names,
-                            &joined_at_dt
-                        ],
-                    ).await {
-                        Ok(_) => {
-                            stored_count += 1;
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to store guild member {}: {}", user_id, e);
-                        }
-                    }
-                    
-                    // Also store basic user information from the user object
-                    if let (Some(username), Some(discriminator)) = (
-                        user.get("username").and_then(|u| u.as_str()),
-                        user.get("discriminator").and_then(|d| d.as_str())
-                    ) {
-                        let avatar = user.get("avatar").and_then(|a| a.as_str());
-                        
-                        // Store user data
-                        if let Err(e) = client.execute(
-                            "INSERT INTO users (user_id, username, discriminator, avatar)
-                             VALUES ($1, $2, $3, $4)
-                             ON CONFLICT (user_id)
-                             DO UPDATE SET
-                                username = EXCLUDED.username,
-                                discriminator = EXCLUDED.discriminator,
-                                avatar = EXCLUDED.avatar,
-                                last_updated = NOW()",
-                            &[&user_id_i64, &username, &discriminator, &avatar],
-                        ).await {
-                            tracing::warn!("Failed to store user data for {}: {}", user_id, e);
-                        }
-                    }
+        for member in members {
+            let user_id_i64 = member.user.id.get() as i64;
+
+            // Convert RoleId vector to String vector for text[] column
+            let role_ids_str: Vec<String> = member.roles.iter().map(|r| r.to_string()).collect();
+            // Explicitly convert joined_at to the correct type for the database parameter
+            // Use unix_timestamp() and DateTime::from_timestamp
+            let joined_at_db: Option<DateTime<Utc>> = member.joined_at.map(|ts| DateTime::from_timestamp(ts.unix_timestamp(), 0)).flatten();
+
+            // Store guild_members data
+            match client.execute(
+                "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (guild_id, user_id)
+                 DO UPDATE SET
+                    nickname = EXCLUDED.nickname,
+                    roles = EXCLUDED.roles,
+                    joined_at = EXCLUDED.joined_at",
+                &[
+                    &guild_id,
+                    &user_id_i64,
+                    &member.nick, // Pass Option<String> directly
+                    &role_ids_str,
+                    &joined_at_db, // Use the converted variable
+                ],
+            ).await {
+                Ok(_) => {
+                    stored_count += 1;
+                }
+                Err(e) => {
+                    // Log error for guild_members storage failure
+                    tracing::error!("Failed to store guild member {} in guild {}: {}", user_id_i64, guild_id, e);
                 }
             }
+
+            // Also store basic user information in the 'users' table
+            // Use direct field access from member.user
+            let username = &member.user.name;
+            // Discriminator might be "0" or absent for new usernames
+            let discriminator = member.user.discriminator.map(|d| d.to_string());
+            // Convert Option<ImageHash> to Option<String> and bind to variable
+            let avatar_db: Option<String> = member.user.avatar.map(|h| h.to_string());
+
+            if let Err(e) = client.execute(
+                "INSERT INTO users (user_id, username, discriminator, avatar, last_updated)
+                 VALUES ($1, $2, $3, $4, NOW())
+                 ON CONFLICT (user_id)
+                 DO UPDATE SET
+                    username = EXCLUDED.username,
+                    discriminator = EXCLUDED.discriminator,
+                                avatar = EXCLUDED.avatar,
+                                last_updated = NOW()",
+                &[&user_id_i64, &username, &discriminator, &avatar_db], // Use the converted variable
+            ).await {
+                // Use ERROR level logging for this potentially critical data
+                tracing::error!("Failed to store user data for {}: {}", user_id_i64, e);
+                // Note: We don't return the error here to allow storing other members,
+                // but the error is now logged more visibly.
+            }
         }
-        
+
         Ok(stored_count)
     }
     

@@ -175,33 +175,12 @@ async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Resul
             Ok(members) => {
                 info!("Fetched {} members for guild {}", members.len(), guild_id_i64);
 
-                // Convert members to JSON format expected by store_guild_members
-                let members_json: Vec<serde_json::Value> = members.iter().map(|m| {
-                    let user = serde_json::json!({
-                        "id": m.user.id.to_string(),
-                        "username": m.user.name,
-                        "discriminator": m.user.discriminator,
-                        "avatar": m.user.avatar
-                    });
-
-                    let role_names = m.roles
-                        .iter()
-                        .filter_map(|role_id| guild_roles.get(role_id))
-                        .map(|r| r.name.clone())
-                        .collect::<Vec<String>>();
-
-                    serde_json::json!({
-                        "user": user,
-                        "nick": m.nick,
-                        "roles": role_names,
-                        "joined_at": m.joined_at.map(|dt| dt.to_rfc3339())
-                    })
-                }).collect();
-
-                // Insert into database
-                match database.store_guild_members(guild_id_i64, &members_json).await {
+                // Call the refactored store_guild_members directly with the Vec<Member>
+                match database.store_guild_members(guild_id_i64, &members).await {
                     Ok(count) => {
-                        info!("Successfully stored {} members for guild {}", count, guild_id_i64);
+                        // This count now reflects attempts to store in guild_members,
+                        // not necessarily successful user inserts.
+                        info!("Processed {} members for guild {}", count, guild_id_i64);
                     },
                     Err(e) => {
                         error!("Failed to store members for guild {}: {}", guild_id_i64, e);
