@@ -130,10 +130,16 @@ export const fetchAnalyticsData = async (params: {
   return response.data;
 };
 
-export const fetchAnalyticsSummary = async (guildId?: string) => {
-  const params = guildId ? { guildId } : {};
-  const response = await api.get('/analytics/summary', { params });
+// Renamed and added period parameter
+export const fetchGuildAnalyticsSummary = async (guildId: string, period: string) => {
+  // Use 'all' if guildId is 'all', otherwise pass the numeric ID
+  const guildPathParam = guildId === 'all' ? 'all' : guildId;
+  const response = await api.get(`/analytics/guild/${guildPathParam}`, {
+    params: { period } // Pass period as query param
+  });
   return response.data;
 };
+
+// Removed duplicate fetchAnalyticsData
 
 export default api;

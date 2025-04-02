@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::analytics::{
-    AnalyticsEvent, GuildAnalyticsSummary, CommandUsage,
-    UserActivitySummary, GuildActivity, LogEventRequest,
-    AnalyticsQueryParams
+    AnalyticsEvent, GuildAnalyticsSummary, CommandUsage, TimeSeriesDataPoint, UserActivityDataPoint,
+    UserActivitySummary, GuildActivity, LogEventRequest, AnalyticsQueryParams
 };
-use chrono::{DateTime, Utc, Duration};
-use tracing::info;
+use chrono::{DateTime, Utc, Duration, NaiveDate};
+use tracing::{info, error}; // Added error
 use serde_json::Value;
+use tokio_postgres::types::ToSql; // Added ToSql
 
 /// Analytics service for database operations
 pub struct AnalyticsService {
@@ -135,10 +135,10 @@ impl AnalyticsService {
         Ok(events)
     }
 
-    /// Get analytics summary for a guild
+    /// Get analytics summary for a specific guild or all guilds
     pub async fn get_guild_summary(
         &self,
-        guild_id: i64,
+        guild_id_opt: Option<i64>, // Changed to Option<i64>
         period: &str,
     ) -> Result<GuildAnalyticsSummary, Error> {
         let client = self.db.get_client().await?;
@@ -149,101 +149,158 @@ impl AnalyticsService {
             "day" => now - Duration::days(1),
             "week" => now - Duration::weeks(1),
             "month" => now - Duration::days(30),
-            _ => return Err(Error::Unknown(format!("Invalid period: {}", period))),
+            "month" => now - Duration::days(30), // Approx month
+            "90d" => now - Duration::days(90), // Added 90d
+            _ => now - Duration::weeks(1), // Default to week if invalid
         };
 
+        // Build base query and arguments, handling optional guild_id
+        let mut base_where_clause = String::from("timestamp >= $1");
+        let mut query_args: Vec<&(dyn ToSql + Sync)> = vec![&start_date];
+
+        if let Some(guild_id) = &guild_id_opt {
+            base_where_clause.push_str(" AND guild_id = $2");
+            query_args.push(guild_id);
+        }
+
+        // --- Aggregate Stats ---
+
         // Get active users count
-        let active_users_row = client
-            .query_one(
-                "SELECT COUNT(DISTINCT user_id) 
-                 FROM analytics_events 
-                 WHERE guild_id = $1 AND timestamp >= $2 AND user_id IS NOT NULL",
-                &[&guild_id, &start_date],
-            )
-            .await?;
-        
-        let active_users: i32 = active_users_row.get(0);
+        let active_users_query = format!(
+            "SELECT COUNT(DISTINCT user_id) FROM analytics_events WHERE {} AND user_id IS NOT NULL",
+            base_where_clause
+        );
+        let active_users_row = client.query_one(&active_users_query, &query_args[..]).await?;
+        let active_users: i64 = active_users_row.get(0); // Use i64 from DB
 
         // Get command usage count
-        let commands_row = client
-            .query_one(
-                "SELECT COUNT(*) 
-                 FROM analytics_events 
-                 WHERE guild_id = $1 AND timestamp >= $2 AND event_type = 'command_used'",
-                &[&guild_id, &start_date],
-            )
-            .await?;
-        
-        let commands_used: i32 = commands_row.get(0);
+        let commands_query = format!(
+            "SELECT COUNT(*) FROM analytics_events WHERE {} AND event_type = 'command_used'",
+            base_where_clause
+        );
+        let commands_row = client.query_one(&commands_query, &query_args[..]).await?;
+        let commands_used: i64 = commands_row.get(0); // Use i64 from DB
 
         // Get message count
-        let messages_row = client
-            .query_one(
-                "SELECT COUNT(*) 
-                 FROM analytics_events 
-                 WHERE guild_id = $1 AND timestamp >= $2 AND event_type = 'message_sent'",
-                &[&guild_id, &start_date],
-            )
-            .await?;
-        
-        let message_count: i32 = messages_row.get(0);
+        let messages_query = format!(
+            "SELECT COUNT(*) FROM analytics_events WHERE {} AND event_type = 'message_sent'",
+            base_where_clause
+        );
+        let messages_row = client.query_one(&messages_query, &query_args[..]).await?;
+        let message_count: i64 = messages_row.get(0); // Use i64 from DB
 
         // Get top commands
-        let top_commands_rows = client
-            .query(
-                "SELECT 
-                    e.event_data->>'command_id' as command_id,
-                    e.event_data->>'command_name' as command_name,
-                    COUNT(*) as count
-                 FROM analytics_events e
-                 WHERE guild_id = $1 AND timestamp >= $2 AND event_type = 'command_used'
-                 AND e.event_data->>'command_id' IS NOT NULL
-                 GROUP BY e.event_data->>'command_id', e.event_data->>'command_name'
-                 ORDER BY count DESC
-                 LIMIT 5",
-                &[&guild_id, &start_date],
-            )
-            .await?;
-        
+        let top_commands_query = format!(
+            "SELECT
+                e.event_data->>'command_id' as command_id,
+                e.event_data->>'command_name' as command_name,
+                COUNT(*) as count
+             FROM analytics_events e
+             WHERE {} AND event_type = 'command_used'
+             AND e.event_data->>'command_id' IS NOT NULL
+             GROUP BY e.event_data->>'command_id', e.event_data->>'command_name'
+             ORDER BY count DESC
+             LIMIT 5",
+            base_where_clause
+        );
+        let top_commands_rows = client.query(&top_commands_query, &query_args[..]).await?;
         let top_commands: Vec<CommandUsage> = top_commands_rows
             .iter()
-            .map(|row| CommandUsage {
-                command_id: row.get(0),
-                command_name: row.get(1),
-                count: row.get(2),
+            .map(|row| {
+                let count_i64: i64 = row.get(2); // Get count as i64
+                CommandUsage {
+                    command_id: row.get(0),
+                    command_name: row.get(1),
+                    count: count_i64 as i32, // Convert to i32 for the struct
+                }
             })
             .collect();
 
         // Get event counts by type
-        let event_types_rows = client
-            .query(
-                "SELECT 
-                    event_type,
-                    COUNT(*) as count
-                 FROM analytics_events
-                 WHERE guild_id = $1 AND timestamp >= $2
-                 GROUP BY event_type
-                 ORDER BY count DESC",
-                &[&guild_id, &start_date],
-            )
-            .await?;
-        
+        let event_types_query = format!(
+            "SELECT
+                event_type,
+                COUNT(*) as count
+             FROM analytics_events
+             WHERE {}
+             GROUP BY event_type
+             ORDER BY count DESC",
+            base_where_clause
+        );
+        let event_types_rows = client.query(&event_types_query, &query_args[..]).await?;
         let mut events_by_type = HashMap::new();
         for row in event_types_rows {
-            events_by_type.insert(row.get::<_, String>(0), row.get::<_, i64>(1) as i32);
+            let count_i64: i64 = row.get(1); // Get count as i64
+            events_by_type.insert(row.get::<_, String>(0), count_i64 as i32); // Convert to i32
         }
+
+        // --- Time Series Data ---
+
+        // Get command usage over time (daily)
+        let command_usage_daily_query = format!(
+            "SELECT
+                DATE(timestamp) as date,
+                COUNT(*) as count
+             FROM analytics_events
+             WHERE {} AND event_type = 'command_used'
+             GROUP BY DATE(timestamp)
+             ORDER BY date ASC",
+            base_where_clause
+        );
+        let command_usage_daily_rows = client.query(&command_usage_daily_query, &query_args[..]).await?;
+        let command_usage_over_time: Vec<TimeSeriesDataPoint> = command_usage_daily_rows
+            .iter()
+            .map(|row| {
+                let count_i64: i64 = row.get(1);
+                TimeSeriesDataPoint {
+                    date: row.get(0),
+                    value: count_i64 as i32,
+                }
+            })
+            .collect();
+
+        // Get user activity over time (daily)
+        let user_activity_daily_query = format!(
+            "SELECT
+                DATE(timestamp) as date,
+                COUNT(CASE WHEN event_type = 'message_sent' THEN 1 END) as messages,
+                COUNT(CASE WHEN event_type = 'command_used' THEN 1 END) as commands
+             FROM analytics_events
+             WHERE {} AND (event_type = 'message_sent' OR event_type = 'command_used')
+             GROUP BY DATE(timestamp)
+             ORDER BY date ASC",
+            base_where_clause
+        );
+        let user_activity_daily_rows = client.query(&user_activity_daily_query, &query_args[..]).await?;
+        let user_activity_over_time: Vec<UserActivityDataPoint> = user_activity_daily_rows
+            .iter()
+            .map(|row| {
+                let messages_i64: i64 = row.get(1);
+                let commands_i64: i64 = row.get(2);
+                UserActivityDataPoint {
+                    date: row.get(0),
+                    messages: messages_i64 as i32,
+                    commands: commands_i64 as i32,
+                }
+            })
+            .collect();
+
 
         // Build and return the summary
         Ok(GuildAnalyticsSummary {
-            guild_id,
+            // Use guild_id_opt.unwrap_or(0) for the ID field, or adjust model if ID should be optional
+            guild_id: guild_id_opt.unwrap_or(0), // Use 0 or another indicator for "All Guilds"
             period: period.to_string(),
-            active_users,
-            commands_used,
-            message_count,
+            active_users: active_users as i32, // Convert final aggregates to i32
+            commands_used: commands_used as i32,
+            message_count: message_count as i32,
             top_commands,
             events_by_type,
+            command_usage_over_time, // Add new field
+            user_activity_over_time, // Add new field
         })
     }
+
 
     /// Get activity summary for a user
     pub async fn get_user_summary(

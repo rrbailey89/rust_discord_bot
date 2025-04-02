@@ -3,7 +3,28 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDate}; // Added NaiveDate
+
+/// Represents a single data point in a time series chart
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeSeriesDataPoint {
+    /// The date for this data point (e.g., "YYYY-MM-DD")
+    pub date: NaiveDate,
+    /// The value for this data point (e.g., count)
+    pub value: i32,
+}
+
+/// Represents user activity data point in a time series chart
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserActivityDataPoint {
+    /// The date for this data point (e.g., "YYYY-MM-DD")
+    pub date: NaiveDate,
+    /// Number of messages sent on this date
+    pub messages: i32,
+    /// Number of commands used on this date
+    pub commands: i32,
+}
+
 
 /// Analytics event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +60,12 @@ pub struct GuildAnalyticsSummary {
     pub message_count: i32,
     /// Event counts by type
     pub events_by_type: HashMap<String, i32>,
+    /// Command usage aggregated over the period (e.g., daily counts)
+    #[serde(default)] // Ensure deserialization works if field is missing
+    pub command_usage_over_time: Vec<TimeSeriesDataPoint>,
+    /// User activity (messages, commands) aggregated over the period (e.g., daily counts)
+    #[serde(default)] // Ensure deserialization works if field is missing
+    pub user_activity_over_time: Vec<UserActivityDataPoint>,
 }
 
 /// Command usage statistics

@@ -76,9 +76,13 @@ async fn list_guilds(
     
     match discord_service.get_current_user_guilds(false).await {
         Ok(discord_guilds) => {
-            // Convert Discord guilds to our API format
-            let mut guild_infos = Vec::new();
-            
+            // Define permission constants
+            const ADMINISTRATOR_PERM: u64 = 1 << 3; // 8
+            const MANAGE_GUILD_PERM: u64 = 1 << 5;  // 32
+
+            // Convert and filter Discord guilds
+            let mut filtered_guild_infos = Vec::new();
+
             for discord_guild in discord_guilds.data {
                 // Parse the guild ID to check if the bot is in this guild
                 let guild_id = match discord_guild.id.parse::<i64>() {
@@ -94,13 +98,32 @@ async fn list_guilds(
                     error!("Error checking if bot is in guild {}: {}", guild_id, e);
                     false
                 });
-                
+
                 // Parse permissions to u64 if available, otherwise use default
                 let permissions = discord_guild.permissions
                     .as_ref()
                     .and_then(|p| u64::from_str_radix(p, 10).ok())
                     .unwrap_or_default();
-                
+
+                // Determine if user has relevant permissions
+                let can_add_bot = (permissions & ADMINISTRATOR_PERM) == ADMINISTRATOR_PERM;
+                let can_manage_guild = (permissions & MANAGE_GUILD_PERM) == MANAGE_GUILD_PERM || can_add_bot; // Admin can also manage
+
+                // Apply filtering logic
+                let should_include = if bot_joined {
+                    // If bot is joined, user needs manage permissions
+                    can_manage_guild
+                } else {
+                    // If bot is not joined, user needs permission to add bots
+                    can_add_bot
+                };
+
+                if !should_include {
+                    debug!("Filtering out guild {} (bot_joined: {}, can_add: {}, can_manage: {})",
+                           discord_guild.id, bot_joined, can_add_bot, can_manage_guild);
+                    continue; // Skip this guild
+                }
+
                 // Build icon URL if available
                 let icon_url = discord_guild.icon.as_ref().map(|icon| {
                     format!(
@@ -121,8 +144,8 @@ async fn list_guilds(
                 } else {
                     None
                 };
-                
-                guild_infos.push(GuildInfo {
+
+                filtered_guild_infos.push(GuildInfo {
                     id: discord_guild.id.clone(),
                     name: discord_guild.name.clone(),
                     icon_url,
@@ -132,8 +155,8 @@ async fn list_guilds(
                     member_count,
                 });
             }
-            
-            HttpResponse::Ok().json(guild_infos)
+
+            HttpResponse::Ok().json(filtered_guild_infos)
         },
         Err(e) => {
             error!("Discord API error: {}", e);

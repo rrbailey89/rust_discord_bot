@@ -1,40 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocation } from 'react-router-dom'; // Import useLocation
+import { useLocation } from 'react-router-dom';
 import styled from 'styled-components';
-import { fetchAnalyticsData, fetchAnalyticsSummary, fetchGuilds } from '../services/api'; // Added fetchGuilds
+// Removed fetchAnalyticsData, fetchAnalyticsSummary might need adjustment or be replaced
+import { fetchGuilds, fetchGuildAnalyticsSummary } from '../services/api'; // Use specific summary fetch
 import AnalyticsChart from '../components/analytics/AnalyticsChart';
 import AnalyticsSummary from '../components/analytics/AnalyticsSummary';
-import { Guild, GuildAnalyticsSummary, CommandUsage } from '../types'; // Import Guild, GuildAnalyticsSummary, CommandUsage types
+// Ensure GuildAnalyticsSummary type includes the new fields from backend models
+import { Guild, GuildAnalyticsSummary, TimeSeriesDataPoint, UserActivityDataPoint } from '../types';
 
-// Define types for the data we expect from the API
-// SummaryStat is now defined in AnalyticsSummary component, but we'll keep it here for clarity if needed elsewhere
+// Type for summary stats passed to the component
 interface SummaryStat {
   title: string;
   value: number | string;
-  change?: number; // Optional change percentage
+  change?: number;
 }
 
-// Assuming fetchAnalyticsData returns an object with these structures
-// Note: CommandUsageData might need adjustment based on actual API response for charts
-interface CommandUsageData {
-  name: string; // e.g., month or day or command name
-  count: number; // count for that command/period
-  // Potentially other fields depending on how the backend aggregates
-}
-
-interface UserActivityData {
-  name: string; // e.g., day of the week or date
-  messages: number;
-  commands: number;
-}
-
-interface AnalyticsData {
-  commandUsage: CommandUsageData[];
-  userActivity: UserActivityData[];
-  // Add other potential data structures returned by fetchAnalyticsData
-}
-
+// No longer need separate AnalyticsData interface, GuildAnalyticsSummary holds everything
 
 const PageContainer = styled.div`
   padding: 20px;
@@ -112,10 +94,11 @@ const Analytics: React.FC = () => {
   const queryParams = new URLSearchParams(location.search);
   const initialGuildId = queryParams.get('guildId') || 'all'; // Get guildId from URL or default to 'all'
 
-  const [timeRange, setTimeRange] = useState('30d');
-  const [guildFilter, setGuildFilter] = useState(initialGuildId); // Initialize with guildId from URL
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Default time range to 'week' to match backend default if needed
+  const [timeRange, setTimeRange] = useState('week');
+  const [guildFilter, setGuildFilter] = useState(initialGuildId);
+  const [startDate, setStartDate] = useState(''); // Keep for custom range UI
+  const [endDate, setEndDate] = useState(''); // Keep for custom range UI
 
   // Update guildFilter if URL query param changes
   useEffect(() => {
@@ -128,49 +111,42 @@ const Analytics: React.FC = () => {
   // Fetch guilds for the dropdown
   const { data: guildsData, isLoading: guildsLoading } = useQuery<Guild[]>({
     queryKey: ['guilds'],
-    queryFn: fetchGuilds, // Assuming fetchGuilds is imported from api.ts
+    queryFn: fetchGuilds,
   });
 
+  // Prepare guilds list for dropdown, ensuring 'all' is present
   const guilds = [
     { id: 'all', name: 'All Guilds' },
     ...(guildsData || []).map(g => ({ id: g.id, name: g.name }))
   ];
 
+  // Single query to fetch all analytics data (summary + charts)
   const {
-    data: summaryData, // This will be GuildAnalyticsSummary | undefined
+    data: summaryData, // This is now GuildAnalyticsSummary including chart data
     isLoading: summaryLoading,
-    error: summaryError
-  } = useQuery<GuildAnalyticsSummary>({ // Expect GuildAnalyticsSummary
-    // Summary likely doesn't depend on time range, only guild filter
-    queryKey: ['analytics-summary', guildFilter], 
-    queryFn: () => fetchAnalyticsSummary(guildFilter !== 'all' ? guildFilter : undefined), // Pass only guildId or undefined
-    // enabled: true, // Fetch always
-  });
-
-  const {
-    data: analyticsData,
-    isLoading: analyticsLoading,
-    error: analyticsError
-  } = useQuery<AnalyticsData>({
-    queryKey: ['analytics-data', guildFilter, timeRange, startDate, endDate],
+    error: summaryError,
+    // refetch // Optional: if you want manual refetching
+  } = useQuery<GuildAnalyticsSummary>({
+    // Query key includes all dependencies
+    queryKey: ['guildAnalytics', guildFilter, timeRange, startDate, endDate],
     queryFn: () => {
-      // Prepare parameters for the API call
-      const params: { guildId?: string; startDate?: string; endDate?: string; timeRange?: string } = {};
-      if (guildFilter !== 'all') {
-        params.guildId = guildFilter;
+      // Determine the period parameter based on state
+      let period = timeRange;
+      if (timeRange === 'custom') {
+        // Backend doesn't support custom date ranges via query params directly in this plan
+        // We'll stick to preset periods for now.
+        // If custom range is needed, backend API needs adjustment.
+        // For now, maybe default custom to 'week' or 'month'? Let's use 'week'.
+        console.warn("Custom date range selected, but backend currently uses preset periods. Using 'week'.");
+        period = 'week';
+        // Or pass startDate/endDate if backend is updated later
       }
-      if (timeRange === 'custom' && startDate && endDate) {
-        params.startDate = startDate;
-        params.endDate = endDate;
-      } else if (timeRange !== 'custom') {
-        // Pass the preset time range (e.g., '7d', '30d') if not custom
-        // The backend needs to handle these presets
-        params.timeRange = timeRange;
-      }
-      
-      return fetchAnalyticsData(params);
+      // Pass guildId ('all' or numeric ID) and the determined period
+      return fetchGuildAnalyticsSummary(guildFilter, period);
     },
-    // enabled: true, // Fetch always, whether 'all' or specific guild
+    // Keep data fresh or stale as needed
+    // staleTime: 5 * 60 * 1000, // e.g., 5 minutes
+    // refetchOnWindowFocus: false,
   });
 
   // Handle time range change
@@ -184,25 +160,25 @@ const Analytics: React.FC = () => {
     }
   };
 
-  // Transform summaryData into the format expected by AnalyticsSummary component
+  // Transform summaryData for the summary boxes
   const transformedSummaryStats: SummaryStat[] = summaryData ? [
-    { title: 'Active Users', value: summaryData.active_users },
-    { title: 'Commands Used', value: summaryData.commands_used },
-    { title: 'Messages Sent', value: summaryData.message_count },
-    // Add more stats derived from events_by_type if needed, checking if it exists first
-    ...(summaryData.events_by_type ? Object.entries(summaryData.events_by_type).map(([key, value]) => ({
-      title: `Events: ${key}`, // Example transformation
-      value: value
-    })) : [])
+    { title: 'Active Users', value: summaryData.active_users ?? 'N/A' },
+    { title: 'Commands Used', value: summaryData.commands_used ?? 'N/A' },
+    { title: 'Messages Sent', value: summaryData.message_count ?? 'N/A' },
+    // Example: Add top event type if available
+    // ...(summaryData.events_by_type && Object.keys(summaryData.events_by_type).length > 0 ?
+    //   [{ title: `Top Event: ${Object.keys(summaryData.events_by_type)[0]}`, value: Object.values(summaryData.events_by_type)[0] }]
+    //   : [])
   ] : [];
 
-  // TODO: Add logic to derive chart data keys dynamically from fetched data
-  // This needs adjustment based on the actual structure of analyticsData.commandUsage
-  const commandUsageKeys = analyticsData?.commandUsage?.[0]
-    ? Object.keys(analyticsData.commandUsage[0]).filter(key => key !== 'name' && key !== 'command_id') // Exclude non-numeric/category keys
-    : [];
-  const userActivityKeys = ['messages', 'commands'];
+  // Prepare data for charts - ensure the fields exist and default to empty arrays
+  const commandUsageChartData = summaryData?.command_usage_over_time || [];
+  const userActivityChartData = summaryData?.user_activity_over_time || [];
 
+  // Define keys for the charts based on the backend model structure
+  const commandUsageKeys = ['value']; // From TimeSeriesDataPoint
+  const userActivityKeys = ['messages', 'commands']; // From UserActivityDataPoint
+  const xAxisKey = 'date'; // From both TimeSeriesDataPoint and UserActivityDataPoint
 
   return (
     <PageContainer>
@@ -235,13 +211,16 @@ const Analytics: React.FC = () => {
             value={timeRange}
             onChange={handleTimeRangeChange}
           >
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
+            {/* Match options to backend supported periods */}
+            <option value="day">Last 24 hours</option>
+            <option value="week">Last 7 days</option>
+            <option value="month">Last 30 days</option>
             <option value="90d">Last 90 days</option>
-            <option value="custom">Custom Range</option>
+            {/* <option value="custom">Custom Range</option> */} {/* Disable custom for now */}
           </FilterSelect>
         </FilterGroup>
-        
+
+        {/* Keep custom date inputs but note they aren't used by API yet */}
         {timeRange === 'custom' && (
           <>
             <FilterGroup>
@@ -267,36 +246,36 @@ const Analytics: React.FC = () => {
         )}
       </FiltersContainer>
       
-      {/* Display errors if any */}
-      {(summaryError || analyticsError) && (
+      {/* Display error if summary query fails */}
+      {summaryError && (
         <ErrorMessage>
-          Error loading analytics data. Please try again later.
+          Error loading analytics data: {summaryError.message || 'Please try again later.'}
         </ErrorMessage>
       )}
-      
+
       {/* Summary stats */}
       <AnalyticsSummary
         stats={transformedSummaryStats} // Use the transformed data
         isLoading={summaryLoading}
       />
 
-      {/* Charts */}
-      {analyticsData && (
+      {/* Charts - Render only if not loading and data exists */}
+      {!summaryLoading && summaryData && (
         <>
           <AnalyticsChart
-            title="Command Usage"
-            data={analyticsData?.commandUsage || []} // Use fetched data or empty array
-            dataKeys={commandUsageKeys} // Use dynamic keys
-            xAxisDataKey="name"
-            // isLoading={analyticsLoading} // Remove isLoading prop
+            title="Command Usage Over Time"
+            data={commandUsageChartData}
+            dataKeys={commandUsageKeys}
+            xAxisDataKey={xAxisKey}
+            // isLoading={summaryLoading} // Removed prop
           />
 
           <AnalyticsChart
-            title="User Activity"
-            data={analyticsData?.userActivity || []} // Use fetched data or empty array
+            title="User Activity Over Time"
+            data={userActivityChartData}
             dataKeys={userActivityKeys}
-            xAxisDataKey="name"
-            // isLoading={analyticsLoading} // Remove isLoading prop
+            xAxisDataKey={xAxisKey}
+            // isLoading={summaryLoading} // Removed prop
           />
         </>
       )}

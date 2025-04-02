@@ -86,40 +86,60 @@ async fn get_events(
     }
 }
 
-/// Get guild analytics summary
+/// Get guild analytics summary (handles "all" for all guilds)
 async fn get_guild_summary(
     req: HttpRequest,
-    path: web::Path<i64>,
+    path: web::Path<String>, // Changed to String to handle "all"
     query: web::Query<PeriodQuery>,
     state: web::Data<WebAppState>,
 ) -> impl Responder {
-    let guild_id = path.into_inner();
-    let period = query.period.as_deref().unwrap_or("week");
-    
-    info!("Retrieving analytics summary for guild: {} (period: {})", guild_id, period);
-    
-    // Create services
-    let analytics_service = AnalyticsService::new(state.database().clone());
-    let guild_service = GuildService::new(state.database().clone());
-    
-    // Check if bot is in this guild
-    let bot_joined = match guild_service.is_bot_in_guild(guild_id).await {
-        Ok(result) => result,
-        Err(e) => {
-            error!("Error checking if bot is in guild {}: {}", guild_id, e);
-            return HttpResponse::InternalServerError().finish();
+    let guild_id_str = path.into_inner();
+    let period = query.get_period(); // Use helper method
+
+    // Determine if fetching for a specific guild or all guilds
+    let guild_id_opt: Option<i64> = if guild_id_str.eq_ignore_ascii_case("all") {
+        info!("Retrieving analytics summary for ALL guilds (period: {})", period);
+        None
+    } else {
+        match guild_id_str.parse::<i64>() {
+            Ok(id) => {
+                info!("Retrieving analytics summary for guild: {} (period: {})", id, period);
+                Some(id)
+            },
+            Err(_) => {
+                error!("Invalid guild ID format in path: {}", guild_id_str);
+                return HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": "Invalid guild ID format. Use numeric ID or 'all'."
+                }));
+            }
         }
     };
-    
-    if !bot_joined {
-        return HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Bot is not in this guild"
-        }));
+
+    // Create services
+    let analytics_service = AnalyticsService::new(state.database().clone());
+    let guild_service = GuildService::new(state.database().clone()); // Keep for potential future checks
+
+    // Optional: Check if bot is in the specific guild if one is provided
+    if let Some(guild_id) = guild_id_opt {
+        match guild_service.is_bot_in_guild(guild_id).await {
+            Ok(true) => { /* Bot is in guild, proceed */ },
+            Ok(false) => {
+                return HttpResponse::NotFound().json(serde_json::json!({
+                    "error": "Bot is not in this guild"
+                }));
+            },
+            Err(e) => {
+                error!("Error checking if bot is in guild {}: {}", guild_id, e);
+                return HttpResponse::InternalServerError().finish();
+            }
+        }
     }
-    
-    // Get guild summary
-    match analytics_service.get_guild_summary(guild_id, period).await {
+    // No check needed if guild_id_opt is None (fetching for "all")
+
+    // Get guild summary (passing Option<i64>)
+    match analytics_service.get_guild_summary(guild_id_opt, &period).await {
         Ok(summary) => {
+            // TODO: Consider if the summary structure needs adjustment when guild_id is 0 (for "all")
             HttpResponse::Ok().json(summary)
         },
         Err(e) => {
@@ -161,7 +181,14 @@ async fn get_user_summary(
 }
 
 /// Query parameters for period
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)] // Added Debug
 struct PeriodQuery {
     period: Option<String>,
+}
+
+impl PeriodQuery {
+    // Helper to get period string with default
+    fn get_period(&self) -> String {
+        self.period.as_deref().unwrap_or("week").to_lowercase()
+    }
 }
