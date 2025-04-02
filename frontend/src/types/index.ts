@@ -102,18 +102,33 @@ export interface CommandUsage {
   count: number;
 }
 
-// Represents a single data point in a time series chart (matches backend NaiveDate with string)
-export interface TimeSeriesDataPoint {
+// Represents individual command usage over time
+export interface CommandTimeSeriesPoint {
   date: string; // Use string for date representation in frontend (e.g., "YYYY-MM-DD")
-  value: number;
+  command_name: string;
+  count: number;
 }
 
-// Represents user activity data point in a time series chart (matches backend NaiveDate with string)
-export interface UserActivityDataPoint {
+// Represents individual user activity over time
+export interface UserTimeSeriesPoint {
   date: string; // Use string for date representation in frontend
+  user_identifier: string; // Username or ID
   messages: number;
   commands: number;
 }
+
+// // Represents a single data point in a time series chart (REDUNDANT - REMOVED)
+// export interface TimeSeriesDataPoint {
+//   date: string;
+//   value: number;
+// }
+
+// // Represents user activity data point in a time series chart (REDUNDANT - REMOVED)
+// export interface UserActivityDataPoint {
+//   date: string;
+//   messages: number;
+//   commands: number;
+// }
 
 // Analytics summary for a guild
 export interface GuildAnalyticsSummary {
@@ -124,9 +139,9 @@ export interface GuildAnalyticsSummary {
   top_commands: CommandUsage[];
   message_count: number;
   events_by_type: Record<string, number>; // Use Record for HashMap equivalent
-  // Add the new fields, defaulting to empty arrays if missing
-  command_usage_over_time?: TimeSeriesDataPoint[];
-  user_activity_over_time?: UserActivityDataPoint[];
+  // Use new granular fields
+  individual_command_usage?: CommandTimeSeriesPoint[];
+  individual_user_activity?: UserTimeSeriesPoint[];
 }
 
 

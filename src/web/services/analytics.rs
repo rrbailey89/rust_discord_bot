@@ -5,13 +5,14 @@ use std::collections::HashMap;
 use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::analytics::{
-    AnalyticsEvent, GuildAnalyticsSummary, CommandUsage, TimeSeriesDataPoint, UserActivityDataPoint,
-    UserActivitySummary, GuildActivity, LogEventRequest, AnalyticsQueryParams
+    AnalyticsEvent, GuildAnalyticsSummary, CommandUsage, // Removed TimeSeriesDataPoint, UserActivityDataPoint
+    UserActivitySummary, GuildActivity, LogEventRequest, AnalyticsQueryParams,
+    CommandTimeSeriesPoint, UserTimeSeriesPoint // Added new granular types
 };
 use chrono::{DateTime, Utc, Duration, NaiveDate};
-use tracing::{info, error}; // Added error
+use tracing::{info, error, warn}; // Added warn
 use serde_json::Value;
-use tokio_postgres::types::ToSql; // Added ToSql
+use tokio_postgres::types::ToSql;
 
 /// Analytics service for database operations
 pub struct AnalyticsService {
@@ -52,7 +53,7 @@ impl AnalyticsService {
 
         let event_id: i32 = row.get(0);
         info!("Logged analytics event: {}", event_id);
-        
+
         Ok(event_id)
     }
 
@@ -66,49 +67,49 @@ impl AnalyticsService {
              FROM analytics_events
              WHERE 1=1"
         );
-        
+
         let mut args = Vec::new();
         let mut arg_index = 1;
-        
+
         // Add filters based on parameters
         if let Some(start_date) = params.start_date {
             query.push_str(&format!(" AND timestamp >= ${}", arg_index));
             args.push(Box::new(start_date) as Box<dyn tokio_postgres::types::ToSql + Sync>);
             arg_index += 1;
         }
-        
+
         if let Some(end_date) = params.end_date {
             query.push_str(&format!(" AND timestamp <= ${}", arg_index));
             args.push(Box::new(end_date) as Box<dyn tokio_postgres::types::ToSql + Sync>);
             arg_index += 1;
         }
-        
+
         if let Some(guild_id) = params.guild_id {
             query.push_str(&format!(" AND guild_id = ${}", arg_index));
             args.push(Box::new(guild_id) as Box<dyn tokio_postgres::types::ToSql + Sync>);
             arg_index += 1;
         }
-        
+
         if let Some(user_id) = params.user_id {
             query.push_str(&format!(" AND user_id = ${}", arg_index));
             args.push(Box::new(user_id) as Box<dyn tokio_postgres::types::ToSql + Sync>);
             arg_index += 1;
         }
-        
+
         if let Some(event_type) = &params.event_type {
             query.push_str(&format!(" AND event_type = ${}", arg_index));
             args.push(Box::new(event_type.clone()) as Box<dyn tokio_postgres::types::ToSql + Sync>);
             arg_index += 1;
         }
-        
+
         // Add order and limit
         query.push_str(" ORDER BY timestamp DESC");
-        
+
         if let Some(limit) = params.limit {
             query.push_str(&format!(" LIMIT ${}", arg_index));
             args.push(Box::new(limit) as Box<dyn tokio_postgres::types::ToSql + Sync>);
         }
-        
+
         // Execute the query
         let rows = client
             .query(
@@ -149,7 +150,6 @@ impl AnalyticsService {
             "day" => now - Duration::days(1),
             "week" => now - Duration::weeks(1),
             "month" => now - Duration::days(30),
-            "month" => now - Duration::days(30), // Approx month
             "90d" => now - Duration::days(90), // Added 90d
             _ => now - Duration::weeks(1), // Default to week if invalid
         };
@@ -234,51 +234,59 @@ impl AnalyticsService {
             events_by_type.insert(row.get::<_, String>(0), count_i64 as i32); // Convert to i32
         }
 
-        // --- Time Series Data ---
+        // --- Time Series Data (Granular) ---
 
-        // Get command usage over time (daily)
-        let command_usage_daily_query = format!(
+        // Get individual command usage over time (daily)
+        let individual_command_query = format!(
             "SELECT
                 DATE(timestamp) as date,
+                COALESCE(event_data->>'command_name', 'unknown') as command_name,
                 COUNT(*) as count
              FROM analytics_events
              WHERE {} AND event_type = 'command_used'
-             GROUP BY DATE(timestamp)
-             ORDER BY date ASC",
+             GROUP BY DATE(timestamp), command_name
+             ORDER BY date ASC, count DESC", // Order by count to potentially limit later
             base_where_clause
         );
-        let command_usage_daily_rows = client.query(&command_usage_daily_query, &query_args[..]).await?;
-        let command_usage_over_time: Vec<TimeSeriesDataPoint> = command_usage_daily_rows
+        let individual_command_rows = client.query(&individual_command_query, &query_args[..]).await?;
+        let individual_command_usage: Vec<CommandTimeSeriesPoint> = individual_command_rows
             .iter()
             .map(|row| {
-                let count_i64: i64 = row.get(1);
-                TimeSeriesDataPoint {
+                let count_i64: i64 = row.get(2);
+                CommandTimeSeriesPoint {
                     date: row.get(0),
-                    value: count_i64 as i32,
+                    command_name: row.get(1),
+                    count: count_i64 as i32,
                 }
             })
             .collect();
 
-        // Get user activity over time (daily)
-        let user_activity_daily_query = format!(
+        // Get individual user activity over time (daily)
+        // Join with users table to get username, fallback to user_id if not found
+        let individual_user_query = format!(
             "SELECT
-                DATE(timestamp) as date,
-                COUNT(CASE WHEN event_type = 'message_sent' THEN 1 END) as messages,
-                COUNT(CASE WHEN event_type = 'command_used' THEN 1 END) as commands
-             FROM analytics_events
-             WHERE {} AND (event_type = 'message_sent' OR event_type = 'command_used')
-             GROUP BY DATE(timestamp)
-             ORDER BY date ASC",
-            base_where_clause
+                DATE(e.timestamp) as date,
+                e.user_id,
+                COALESCE(u.username, e.user_id::text) as user_identifier,
+                COUNT(CASE WHEN e.event_type = 'message_sent' THEN 1 END) as messages,
+                COUNT(CASE WHEN e.event_type = 'command_used' THEN 1 END) as commands
+             FROM analytics_events e
+             LEFT JOIN users u ON e.user_id = u.user_id -- Join users table
+             WHERE {} AND e.user_id IS NOT NULL AND (e.event_type = 'message_sent' OR e.event_type = 'command_used')
+             GROUP BY DATE(e.timestamp), e.user_id, user_identifier
+             ORDER BY date ASC, (messages + commands) DESC", // Order by total activity
+            base_where_clause.replace("timestamp", "e.timestamp") // Adjust clause for alias 'e'
         );
-        let user_activity_daily_rows = client.query(&user_activity_daily_query, &query_args[..]).await?;
-        let user_activity_over_time: Vec<UserActivityDataPoint> = user_activity_daily_rows
+        let individual_user_rows = client.query(&individual_user_query, &query_args[..]).await?;
+        let individual_user_activity: Vec<UserTimeSeriesPoint> = individual_user_rows
             .iter()
             .map(|row| {
-                let messages_i64: i64 = row.get(1);
-                let commands_i64: i64 = row.get(2);
-                UserActivityDataPoint {
+                let messages_i64: i64 = row.get(3);
+                let commands_i64: i64 = row.get(4);
+                UserTimeSeriesPoint {
                     date: row.get(0),
+                    // user_id: row.get(1), // Keep user_id if needed later
+                    user_identifier: row.get(2), // Username or ID
                     messages: messages_i64 as i32,
                     commands: commands_i64 as i32,
                 }
@@ -288,18 +296,19 @@ impl AnalyticsService {
 
         // Build and return the summary
         Ok(GuildAnalyticsSummary {
-            // Use guild_id_opt.unwrap_or(0) for the ID field, or adjust model if ID should be optional
-            guild_id: guild_id_opt.unwrap_or(0), // Use 0 or another indicator for "All Guilds"
+            guild_id: guild_id_opt.unwrap_or(0),
             period: period.to_string(),
-            active_users: active_users as i32, // Convert final aggregates to i32
+            active_users: active_users as i32,
             commands_used: commands_used as i32,
             message_count: message_count as i32,
             top_commands,
             events_by_type,
-            command_usage_over_time, // Add new field
-            user_activity_over_time, // Add new field
+            // Use correct field names as defined in the model
+            individual_command_usage: individual_command_usage,
+            individual_user_activity: individual_user_activity,
         })
     }
+
 
 
     /// Get activity summary for a user
@@ -322,11 +331,11 @@ impl AnalyticsService {
         // Get user info
         let user_info_row = client
             .query_opt(
-                "SELECT username FROM users WHERE id = $1",
+                "SELECT username FROM users WHERE user_id = $1", // Corrected column name
                 &[&user_id],
             )
             .await?;
-        
+
         let username = match user_info_row {
             Some(row) => row.get::<_, String>(0),
             None => "Unknown User".to_string(),
@@ -335,7 +344,7 @@ impl AnalyticsService {
         // Get command usage
         let commands_rows = client
             .query(
-                "SELECT 
+                "SELECT
                     e.event_data->>'command_id' as command_id,
                     e.event_data->>'command_name' as command_name,
                     COUNT(*) as count
@@ -347,67 +356,74 @@ impl AnalyticsService {
                 &[&user_id, &start_date],
             )
             .await?;
-        
+
         let commands_used: Vec<CommandUsage> = commands_rows
             .iter()
-            .map(|row| CommandUsage {
-                command_id: row.get(0),
-                command_name: row.get(1),
-                count: row.get(2),
+            .map(|row| {
+                let count_i64: i64 = row.get(2); // Get count as i64
+                CommandUsage {
+                    command_id: row.get(0),
+                    command_name: row.get(1),
+                    count: count_i64 as i32, // Convert to i32
+                }
             })
             .collect();
 
         // Get guild activity
         let guilds_rows = client
             .query(
-                "SELECT 
+                "SELECT
                     e.guild_id,
                     g.name as guild_name,
                     COUNT(CASE WHEN e.event_type = 'message_sent' THEN 1 END) as message_count,
                     COUNT(CASE WHEN e.event_type = 'command_used' THEN 1 END) as commands_used
                  FROM analytics_events e
-                 JOIN guilds g ON e.guild_id = g.id
+                 LEFT JOIN guilds g ON e.guild_id = g.guild_id -- Corrected join column
                  WHERE e.user_id = $1 AND e.timestamp >= $2 AND e.guild_id IS NOT NULL
                  GROUP BY e.guild_id, g.name
                  ORDER BY message_count + commands_used DESC",
                 &[&user_id, &start_date],
             )
             .await?;
-        
+
         let active_guilds: Vec<GuildActivity> = guilds_rows
             .iter()
-            .map(|row| GuildActivity {
-                guild_id: row.get(0),
-                guild_name: row.get(1),
-                message_count: row.get(2),
-                commands_used: row.get(3),
+            .map(|row| {
+                let msg_count_i64: i64 = row.get(2);
+                let cmd_count_i64: i64 = row.get(3);
+                GuildActivity {
+                    guild_id: row.get(0),
+                    guild_name: row.get(1),
+                    message_count: msg_count_i64 as i32,
+                    commands_used: cmd_count_i64 as i32,
+                }
             })
             .collect();
 
         // Get message count
         let messages_row = client
             .query_one(
-                "SELECT COUNT(*) 
-                 FROM analytics_events 
+                "SELECT COUNT(*)
+                 FROM analytics_events
                  WHERE user_id = $1 AND timestamp >= $2 AND event_type = 'message_sent'",
                 &[&user_id, &start_date],
             )
             .await?;
-        
-        let message_count: i32 = messages_row.get(0);
+
+        let message_count: i64 = messages_row.get(0); // Get as i64
 
         // Get first and last activity
         let activity_row = client
             .query_one(
-                "SELECT 
+                "SELECT
                     MIN(timestamp) as first_activity,
                     MAX(timestamp) as last_activity
-                 FROM analytics_events 
+                 FROM analytics_events
                  WHERE user_id = $1 AND timestamp >= $2",
                 &[&user_id, &start_date],
             )
             .await?;
-        
+
         let first_activity: DateTime<Utc> = activity_row.get(0);
         let last_activity: DateTime<Utc> = activity_row.get(1);
 
@@ -418,7 +434,7 @@ impl AnalyticsService {
             period: period.to_string(),
             commands_used,
             active_guilds,
-            message_count,
+            message_count: message_count as i32, // Convert to i32
             first_activity,
             last_activity,
         })

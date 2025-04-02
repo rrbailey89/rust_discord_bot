@@ -6,8 +6,8 @@ import styled from 'styled-components';
 import { fetchGuilds, fetchGuildAnalyticsSummary } from '../services/api'; // Use specific summary fetch
 import AnalyticsChart from '../components/analytics/AnalyticsChart';
 import AnalyticsSummary from '../components/analytics/AnalyticsSummary';
-// Ensure GuildAnalyticsSummary type includes the new fields from backend models
-import { Guild, GuildAnalyticsSummary, TimeSeriesDataPoint, UserActivityDataPoint } from '../types';
+// Import the new granular types and ensure GuildAnalyticsSummary has the new fields
+import { Guild, GuildAnalyticsSummary, CommandTimeSeriesPoint, UserTimeSeriesPoint } from '../types';
 
 // Type for summary stats passed to the component
 interface SummaryStat {
@@ -171,14 +171,70 @@ const Analytics: React.FC = () => {
     //   : [])
   ] : [];
 
-  // Prepare data for charts - ensure the fields exist and default to empty arrays
-  const commandUsageChartData = summaryData?.command_usage_over_time || [];
-  const userActivityChartData = summaryData?.user_activity_over_time || [];
+  // --- Process Granular Data for Charts ---
 
-  // Define keys for the charts based on the backend model structure
-  const commandUsageKeys = ['value']; // From TimeSeriesDataPoint
-  const userActivityKeys = ['messages', 'commands']; // From UserActivityDataPoint
-  const xAxisKey = 'date'; // From both TimeSeriesDataPoint and UserActivityDataPoint
+  // 1. Process Individual Command Usage
+  const rawCommandData: CommandTimeSeriesPoint[] = summaryData?.individual_command_usage || [];
+  // Find top 5 commands based on total usage in the period
+  const commandTotals = rawCommandData.reduce((acc: Record<string, number>, curr: CommandTimeSeriesPoint) => {
+    acc[curr.command_name] = (acc[curr.command_name] || 0) + curr.count;
+    return acc;
+  }, {});
+  const top5CommandNames = Object.entries(commandTotals)
+    .sort(([, countA], [, countB]) => (countB as number) - (countA as number)) // Add type assertion
+    .slice(0, 5)
+    .map(([name]) => name);
+
+  // Pivot data for top 5 commands
+  type PivotedCommandEntry = { date: string; [key: string]: number | string };
+  const pivotedCommandData = rawCommandData
+    .filter((d: CommandTimeSeriesPoint) => top5CommandNames.includes(d.command_name)) // Filter for top 5
+    .reduce((acc: PivotedCommandEntry[], curr: CommandTimeSeriesPoint) => {
+      let entry = acc.find((item: PivotedCommandEntry) => item.date === curr.date);
+      if (!entry) {
+        entry = { date: curr.date };
+        acc.push(entry);
+      }
+      entry[curr.command_name] = curr.count;
+      return acc;
+    }, [])
+    .sort((a: PivotedCommandEntry, b: PivotedCommandEntry) => a.date.localeCompare(b.date)); // Sort by date
+
+  // 2. Process Individual User Activity
+  const rawUserData: UserTimeSeriesPoint[] = summaryData?.individual_user_activity || [];
+  // Find top 5 users based on total activity (messages + commands)
+  const userTotals = rawUserData.reduce((acc: Record<string, number>, curr: UserTimeSeriesPoint) => {
+    const totalActivity = curr.messages + curr.commands;
+    acc[curr.user_identifier] = (acc[curr.user_identifier] || 0) + totalActivity;
+    return acc;
+  }, {});
+  const top5UserIdentifiers = Object.entries(userTotals)
+    .sort(([, activityA], [, activityB]) => (activityB as number) - (activityA as number)) // Add type assertion
+    .slice(0, 5)
+    .map(([identifier]) => identifier);
+
+  // Pivot data for top 5 users
+  type PivotedUserEntry = { date: string; [key: string]: number | string };
+  const pivotedUserData = rawUserData
+    .filter((d: UserTimeSeriesPoint) => top5UserIdentifiers.includes(d.user_identifier)) // Filter for top 5
+    .reduce((acc: PivotedUserEntry[], curr: UserTimeSeriesPoint) => {
+      let entry = acc.find((item: PivotedUserEntry) => item.date === curr.date);
+      if (!entry) {
+        entry = { date: curr.date };
+        acc.push(entry);
+      }
+      // Store messages and commands separately for each user on that date
+      entry[`${curr.user_identifier}_messages`] = curr.messages;
+      entry[`${curr.user_identifier}_commands`] = curr.commands;
+      return acc;
+    }, [])
+    .sort((a: PivotedUserEntry, b: PivotedUserEntry) => a.date.localeCompare(b.date)); // Sort by date
+
+  // Define keys for the charts dynamically based on the top 5
+  const commandUsageKeys = top5CommandNames;
+  // For user activity, create keys for both messages and commands per user
+  const userActivityKeys = top5UserIdentifiers.flatMap(id => [`${id}_messages`, `${id}_commands`]);
+  const xAxisKey = 'date';
 
   return (
     <PageContainer>
@@ -262,20 +318,21 @@ const Analytics: React.FC = () => {
       {/* Charts - Render only if not loading and data exists */}
       {!summaryLoading && summaryData && (
         <>
+          {/* Use pivoted data and dynamic keys */}
           <AnalyticsChart
-            title="Command Usage Over Time"
-            data={commandUsageChartData}
-            dataKeys={commandUsageKeys}
+            title="Top 5 Command Usage Over Time"
+            data={pivotedCommandData}
+            dataKeys={commandUsageKeys} // Use dynamic keys for top 5 commands
             xAxisDataKey={xAxisKey}
-            // isLoading={summaryLoading} // Removed prop
           />
 
           <AnalyticsChart
-            title="User Activity Over Time"
-            data={userActivityChartData}
-            dataKeys={userActivityKeys}
+            title="Top 5 User Activity Over Time"
+            data={pivotedUserData}
+            dataKeys={userActivityKeys} // Use dynamic keys for top 5 users (messages & commands)
             xAxisDataKey={xAxisKey}
-            // isLoading={summaryLoading} // Removed prop
+            // Consider using a line chart or stacked bar chart for better readability here
+            // stacked={true} // Example if using stacked bars
           />
         </>
       )}

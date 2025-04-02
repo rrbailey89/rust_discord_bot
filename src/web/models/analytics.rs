@@ -14,9 +14,26 @@ pub struct TimeSeriesDataPoint {
     pub value: i32,
 }
 
+/// Represents individual command usage over time
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandTimeSeriesPoint {
+    pub date: NaiveDate,
+    pub command_name: String,
+    pub count: i32,
+}
+
+/// Represents individual user activity over time
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserTimeSeriesPoint {
+    pub date: NaiveDate,
+    pub user_identifier: String, // Username or ID
+    pub messages: i32,
+    pub commands: i32,
+}
+
 /// Represents user activity data point in a time series chart
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserActivityDataPoint {
+pub struct UserActivityDataPoint { // This might be redundant now
     /// The date for this data point (e.g., "YYYY-MM-DD")
     pub date: NaiveDate,
     /// Number of messages sent on this date
@@ -60,12 +77,15 @@ pub struct GuildAnalyticsSummary {
     pub message_count: i32,
     /// Event counts by type
     pub events_by_type: HashMap<String, i32>,
-    /// Command usage aggregated over the period (e.g., daily counts)
-    #[serde(default)] // Ensure deserialization works if field is missing
-    pub command_usage_over_time: Vec<TimeSeriesDataPoint>,
-    /// User activity (messages, commands) aggregated over the period (e.g., daily counts)
-    #[serde(default)] // Ensure deserialization works if field is missing
-    pub user_activity_over_time: Vec<UserActivityDataPoint>,
+    /// Individual command usage aggregated over the period (e.g., daily counts)
+    #[serde(default)]
+    pub individual_command_usage: Vec<CommandTimeSeriesPoint>,
+    /// Individual user activity (messages, commands) aggregated over the period (e.g., daily counts)
+    #[serde(default)]
+    pub individual_user_activity: Vec<UserTimeSeriesPoint>,
+    // Removed old aggregate fields:
+    // pub command_usage_over_time: Vec<TimeSeriesDataPoint>,
+    // pub user_activity_over_time: Vec<UserActivityDataPoint>,
 }
 
 /// Command usage statistics
