@@ -15,7 +15,7 @@ use crate::services::{LoggingService, MetricsService};
 use crate::services::cache::CacheService;
 use crate::error::Error;
 use poise::serenity_prelude as serenity;
-use poise::serenity_prelude::{ChannelId, CreateMessage, OnlineStatus, ActivityData};
+use poise::serenity_prelude::{ChannelId, CreateMessage, OnlineStatus, ActivityData, Command as SerenityCommand}; // Added SerenityCommand
 use serenity::GatewayIntents;
 use std::sync::Arc;
 use tokio::time::{Duration, sleep};
@@ -27,7 +27,9 @@ use std::time::Instant;
 use std::path::Path;
 use crate::web::services::AnalyticsService;
 use crate::web::models::analytics::LogEventRequest;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet}; // Added HashSet
+use poise::Command as PoiseCommand; // Alias Poise Command
+use serenity::builder::CreateCommand; // Added CreateCommand
 
 #[derive(Clone, Debug)]
 pub struct Data {
@@ -456,55 +458,125 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
             let app_data_clone = app_data_for_setup.clone();
 
             Box::pin(async move {
-                // Get all commands
-                let all_commands = commands::get_commands();
+                info!("Starting global command registration check...");
 
-                // Get the list of all command names that should be global
+                // 1. Get local command definitions intended to be global
+                let all_local_commands: Vec<PoiseCommand<Data, Error>> = commands::get_commands();
                 let command_configs = commands::get_command_config();
-                let global_command_names: Vec<&str> = command_configs.iter()
-                    .filter_map(|(name, config)| {
-                        if config.scope == commands::CommandScope::Global {
-                            Some(*name)
-                        } else {
-                            None
-                        }
+                let local_global_commands: Vec<PoiseCommand<Data, Error>> = all_local_commands.into_iter()
+                    .filter(|cmd| {
+                        command_configs.get(cmd.name.as_str())
+                            .map_or(false, |config| config.scope == commands::CommandScope::Global)
                     })
                     .collect();
+                let local_global_command_names: HashSet<&str> = local_global_commands.iter().map(|cmd| cmd.name.as_str()).collect();
+                info!("Found {} local commands intended to be global: {:?}", local_global_command_names.len(), local_global_command_names);
 
-                info!("Found {} commands to register globally: {:?}",
-                    global_command_names.len(), global_command_names);
+                // 2. Fetch existing global commands from Discord
+                let existing_commands = match ctx.http.get_global_commands().await {
+                    Ok(cmds) => {
+                        info!("Fetched {} existing global commands from Discord.", cmds.len());
+                        cmds
+                    },
+                    Err(e) => {
+                        error!("Failed to fetch existing global commands: {}", e);
+                        // Proceed without comparison, potentially re-registering everything
+                        // Or return error depending on desired behavior
+                        return Err(e.into()); // Return error for now
+                    }
+                };
+                let existing_commands_map: HashMap<String, SerenityCommand> = existing_commands.into_iter()
+                    .map(|cmd| (cmd.name.clone(), cmd))
+                    .collect();
 
-                // First, check if we need to clear existing global commands
-                if let Some(app_id) = &config_clone.bot.application_id {
-                    // Create a separate Discord service for API operations
-                    let discord_service = web::services::discord::DiscordService::new_bot(
-                        config_clone.bot.bot_token.clone(),
-                        Some(app_id.clone())
-                    );
+                // 3. Compare and determine actions
+                let mut commands_to_create: Vec<CreateCommand> = Vec::new();
+                // Correct tuple definition: (ID, Builder, Name)
+                let mut commands_to_edit: Vec<(serenity::CommandId, CreateCommand, String)> = Vec::new();
+                let mut command_ids_to_delete: Vec<serenity::CommandId> = Vec::new();
 
-                    // Clean up any existing global commands that shouldn't be there
-                    if let Err(e) = discord_service.clear_global_commands().await {
-                        error!("Failed to clear global commands: {}", e);
+                // Check local commands against existing ones
+                for local_cmd in &local_global_commands {
+                    let cmd_name = local_cmd.name.clone(); // Clone name for logging
+                    // Handle Option returned by create_as_slash_command
+                    if let Some(local_builder) = local_cmd.create_as_slash_command() {
+                        if let Some(existing_cmd) = existing_commands_map.get(&cmd_name) {
+                            // Command exists, check if it needs update
+                            // Pass local_cmd too for comparison data
+                            if builders_differ(local_cmd, &local_builder, existing_cmd) {
+                                info!("Command '{}' definition differs, scheduling edit.", cmd_name);
+                                // Store name along for logging in the edit loop
+                                commands_to_edit.push((existing_cmd.id, local_builder, cmd_name.clone()));
+                            } else {
+                                info!("Command '{}' definition matches, skipping.", cmd_name);
+                            }
+                        } else {
+                            // Command doesn't exist, needs creation
+                            info!("Command '{}' not found on Discord, scheduling creation.", cmd_name);
+                            commands_to_create.push(local_builder); // Push the builder itself
+                        }
                     } else {
-                        info!("Successfully cleared existing global commands");
+                        warn!("Could not create slash command builder for local command '{}'. Skipping.", local_cmd.name);
                     }
                 }
 
-                // Filter the commands to just those marked as global
-                // First, create a new Vec of commands (not references)
-                let global_commands: Vec<_> = all_commands.into_iter()
-                    .filter(|cmd| {
-                        let name = cmd.name.as_str();
-                        global_command_names.contains(&name)
-                    })
-                    .collect();
-
-                if !global_commands.is_empty() {
-                    poise::builtins::register_globally(ctx, &global_commands).await?;
-                    info!("Registered {} global commands with Discord (ping, help)", global_commands.len());
-                } else {
-                    warn!("No global commands found to register");
+                // Check existing commands against local ones for deletion
+                for (name, existing_cmd) in &existing_commands_map {
+                    if !local_global_command_names.contains(name.as_str()) {
+                        info!("Existing command '{}' not found locally, scheduling deletion.", name);
+                        command_ids_to_delete.push(existing_cmd.id);
+                    }
                 }
+
+                // 4. Execute API calls
+                let mut changes_made = false;
+
+                if !commands_to_create.is_empty() {
+                    info!("Creating {} new global command(s)...", commands_to_create.len());
+                    for builder in commands_to_create { // Takes ownership
+                        // Log using the name from the builder if possible (might require storing name separately)
+                        // For now, use a generic log message
+                        if let Err(e) = ctx.http.create_global_command(&builder).await { // Pass by reference
+                            error!("Failed to create a new global command: {}", e);
+                        } else {
+                            info!("Successfully created a new global command.");
+                            changes_made = true;
+                        }
+                    }
+                }
+
+                if !commands_to_edit.is_empty() {
+                    info!("Editing {} existing global command(s)...", commands_to_edit.len());
+                    // Correctly destructure the tuple (CommandId, CreateCommand, String)
+                    for (id, builder, name) in commands_to_edit { // Takes ownership
+                        if let Err(e) = ctx.http.edit_global_command(id, &builder).await { // Pass builder by reference
+                            error!("Failed to edit global command '{}' (ID {}): {}", name, id, e);
+                        } else {
+                            info!("Successfully edited global command '{}' (ID {})", name, id);
+                            changes_made = true;
+                        }
+                    }
+                }
+
+                if !command_ids_to_delete.is_empty() {
+                    info!("Deleting {} obsolete global command(s)...", command_ids_to_delete.len());
+                    for id in command_ids_to_delete {
+                        if let Err(e) = ctx.http.delete_global_command(id).await {
+                            error!("Failed to delete global command ID {}: {}", id, e);
+                        } else {
+                            info!("Successfully deleted global command ID {}", id);
+                            changes_made = true;
+                        }
+                    }
+                }
+
+                if !changes_made {
+                    info!("No changes needed for global commands.");
+                }
+
+                // Remove the old unconditional registration
+                // poise::builtins::register_globally(ctx, &global_commands).await?;
+                // info!("Registered {} global commands with Discord (ping, help)", global_commands.len());
 
                 // Insert Data into TypeMap
                 {
@@ -512,11 +584,60 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                     data_map.insert::<DataContainer>(app_data_clone);
                 }
 
-                // Return the Data instance, not the Arc<Data>
                 Ok(data_for_framework)
             })
         })
         .build();
+
+    // Helper function to compare local PoiseCommand with existing SerenityCommand
+    fn builders_differ(
+        local_cmd: &PoiseCommand<Data, Error>,
+        _builder: &CreateCommand, // Keep reference, maybe needed later for more complex checks
+        existing: &SerenityCommand
+    ) -> bool {
+        // 1. Compare Name (Redundant check, but safe)
+        if local_cmd.name != existing.name {
+            warn!("Name mismatch during diff check? Local: '{}', Existing: '{}'", local_cmd.name, existing.name);
+            return true;
+        }
+
+        // 2. Compare Description (Handle Option<String> vs String)
+        let local_desc = local_cmd.description.as_deref();
+        let existing_desc = Some(existing.description.as_str()).filter(|s| !s.is_empty()); // Treat empty string as None
+        if local_desc != existing_desc {
+            // Consider localized description if primary differs
+            if existing.description_localizations.as_ref().and_then(|loc| loc.get("en-US").map(|s| s.as_str())) != local_desc {
+                 return true;
+            }
+        }
+
+        // 3. Compare Options Length (Basic check - poise::Command uses `parameters`)
+        if local_cmd.parameters.len() != existing.options.len() {
+            return true;
+        }
+        // TODO: Implement more robust option comparison using local_cmd.parameters vs existing.options
+
+        // 4. Compare Default Member Permissions (poise::Command uses `required_permissions`)
+        // Handle Option vs non-Option: If existing is None, local must be empty. If existing is Some, they must match.
+        match existing.default_member_permissions {
+            None => {
+                if !local_cmd.required_permissions.is_empty() { return true; }
+            }
+            Some(existing_perms) => {
+                if local_cmd.required_permissions != existing_perms { return true; }
+            }
+        }
+
+
+        // 5. Compare NSFW status (poise::Command uses `nsfw_only`)
+        if local_cmd.nsfw_only != existing.nsfw {
+            return true;
+        }
+
+        // TODO: Compare contexts, integration_types, dm_permission using local_cmd fields
+
+        false // Assume same if basic checks pass
+    }
 
     let mut client = serenity::ClientBuilder::new(
         &bot_token_clone,
