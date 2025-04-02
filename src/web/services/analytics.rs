@@ -274,7 +274,7 @@ impl AnalyticsService {
              LEFT JOIN users u ON e.user_id = u.user_id -- Join users table
              WHERE {} AND e.user_id IS NOT NULL AND (e.event_type = 'message_sent' OR e.event_type = 'command_used')
              GROUP BY DATE(e.timestamp), e.user_id, user_identifier
-             ORDER BY date ASC, (messages + commands) DESC", // Order by total activity
+             ORDER BY date ASC, (COUNT(CASE WHEN e.event_type = 'message_sent' THEN 1 END) + COUNT(CASE WHEN e.event_type = 'command_used' THEN 1 END)) DESC", // Use expressions in ORDER BY
             base_where_clause.replace("timestamp", "e.timestamp") // Adjust clause for alias 'e'
         );
         let individual_user_rows = client.query(&individual_user_query, &query_args[..]).await?;
