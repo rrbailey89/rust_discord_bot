@@ -46,7 +46,8 @@ pub struct Data {
     pub command_cooldown: Arc<crate::services::command_cooldown::CommandCooldownService>,
 }
 
-async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Result<(), Error> {
+// Consolidated function to send reminders
+async fn send_due_reminders_internal(http: &serenity::Http, data: &Data) -> Result<(), Error> {
     let start_time = std::time::Instant::now();
     let mut reminders_sent = 0;
 
@@ -64,7 +65,7 @@ async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Resul
     if reminder_count > 0 {
         // Prefix unused result
         let _ = data.logging.log_command_execution(
-            "check_reminders",
+            "check_reminders", // Consider renaming this log identifier if needed
             None,
             None
         );
@@ -75,7 +76,7 @@ async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Resul
         let channel = ChannelId::new(reminder.channel_id as u64);
         let content = reminder.message.clone();
 
-        match channel.send_message(&ctx.http, CreateMessage::new().content(&content)).await {
+        match channel.send_message(http, CreateMessage::new().content(&content)).await { // Use the passed http client
             Ok(_) => {
                 data.database.update_reminder_last_sent(reminder.id).await?;
                 reminders_sent += 1;
@@ -99,59 +100,6 @@ async fn check_and_send_reminders(ctx: &serenity::Context, data: &Data) -> Resul
     Ok(())
 }
 
-// Helper function to check and send reminders using just the HTTP client
-async fn check_and_send_reminders_http(http: &serenity::Http, data: &Data) -> Result<(), Error> {
-    let start_time = std::time::Instant::now();
-    let mut reminders_sent = 0;
-
-    // Use TimedOperation to measure database query duration
-    let due_reminders = {
-        let _timer = crate::services::TimedOperation::for_db_query(
-            "get_due_reminders",
-            data.logging.clone()
-        );
-        data.database.get_due_reminders().await?
-    };
-
-    let reminder_count = due_reminders.len();
-
-    if reminder_count > 0 {
-         // Prefix unused result
-        let _ = data.logging.log_command_execution(
-            "check_reminders",
-            None,
-            None
-        );
-        tracing::info!("Processing {} due reminders", reminder_count);
-    }
-
-    for reminder in due_reminders {
-        let channel = ChannelId::new(reminder.channel_id as u64);
-        let content = reminder.message.clone();
-
-        match channel.send_message(&http, CreateMessage::new().content(&content)).await {
-            Ok(_) => {
-                data.database.update_reminder_last_sent(reminder.id).await?;
-                reminders_sent += 1;
-            },
-            Err(e) => {
-                tracing::warn!("Failed to send reminder to channel {}: {}",
-                     reminder.channel_id, e);
-            }
-        }
-    }
-
-    // Log metrics
-    let elapsed = start_time.elapsed();
-    if reminders_sent > 0 || reminder_count > 0 {
-        tracing::info!("Reminder check completed: {}/{} reminders sent in {:?}",
-             reminders_sent, reminder_count, elapsed);
-    } else {
-        tracing::debug!("Reminder check completed: No due reminders found ({:?})", elapsed);
-    }
-
-    Ok(())
-}
 
 async fn update_presence(ctx: serenity::Context, data: Arc<Data>) -> Result<(), Error> {
     // Log that we're updating presence
@@ -676,7 +624,8 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
                 interval.tick().await;
                 debug!("Checking for due reminders");
 
-                match check_and_send_reminders_http(&http, &task_data).await {
+                // Call the consolidated internal function
+                match send_due_reminders_internal(&http, &task_data).await {
                     Ok(_) => {
                         // Reset error counter on success
                         if consecutive_errors > 0 {
