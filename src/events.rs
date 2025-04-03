@@ -13,7 +13,11 @@ use crate::DataContainer;
 use crate::web::services::AnalyticsService; // Added
 use crate::web::models::analytics::LogEventRequest; // Added
 use std::collections::HashMap; // Added
-use tracing::{error, warn, info}; // Added info
+use tracing::{error, warn, info, debug}; // Added info, debug
+use poise::serenity_prelude::{Ready, OnlineStatus, ActivityData}; // Added Ready, OnlineStatus, ActivityData
+use std::sync::Arc; // Added Arc
+use tokio::time::{sleep, Duration}; // Added sleep, Duration
+use rand::{Rng, thread_rng}; // Added Rng, thread_rng
 
 pub async fn handle_event(
     ctx: &Context,
@@ -88,12 +92,77 @@ pub async fn handle_event(
         FullEvent::ReactionAdd { add_reaction } => {
             handle_reaction_add(ctx, add_reaction).await?;
         }
+        FullEvent::Ready { data_about_bot } => {
+            info!("{} is connected!", data_about_bot.user.name);
+            // Spawn the presence update task
+            let ctx_clone = ctx.clone();
+            // Get the Arc<Data> using the context's TypeMap and clone it
+            let data_arc = {
+                let data_read = ctx.data.read().await;
+                data_read.get::<DataContainer>().expect("Expected DataContainer in TypeMap").clone()
+            };
+            tokio::spawn(async move {
+                info!("Spawning presence update task...");
+                // Pass the cloned Arc<Data> to the task
+                if let Err(e) = update_presence(ctx_clone, data_arc).await {
+                    error!("Presence update task failed: {}", e);
+                } else {
+                    // This part might not be reached if update_presence loops infinitely
+                    info!("Presence update task finished unexpectedly.");
+                }
+            });
+        }
         _ => {}
     }
     Ok(())
 }
 
 // --- Event Handlers ---
+
+/// Task to periodically update the bot's presence.
+pub async fn update_presence(ctx: Context, data: Arc<Data>) -> Result<(), Error> {
+    info!("Presence update task started.");
+    loop {
+        // Set initial/default presence
+        let activity_help = ActivityData::custom("Use /help to learn more");
+        ctx.set_presence(Some(activity_help), OnlineStatus::Online);
+        debug!("Presence set to: Use /help to learn more");
+
+        // Sleep for a random duration
+        let sleep_duration_1 = {
+            let mut rng = thread_rng();
+            Duration::from_secs(rng.gen_range(600..=900)) // 10-15 minutes
+        };
+        debug!("Sleeping for {:?}", sleep_duration_1);
+        sleep(sleep_duration_1).await;
+
+        // Fetch blame count and set presence
+        match data.database.get_blame_count().await {
+            Ok(blame_count) => {
+                let activity_blame = ActivityData::custom(format!("Serena's blame count: {}", blame_count));
+                ctx.set_presence(Some(activity_blame), OnlineStatus::Online);
+                debug!("Presence set to: Serena's blame count: {}", blame_count);
+            }
+            Err(e) => {
+                error!("Failed to get blame count for presence update: {}", e);
+                // Optionally, set a default status or just skip this update cycle
+            }
+        }
+
+        // Sleep again before looping
+        let sleep_duration_2 = {
+            let mut rng = thread_rng();
+            Duration::from_secs(rng.gen_range(600..=900)) // 10-15 minutes
+        };
+        debug!("Sleeping for {:?}", sleep_duration_2);
+        sleep(sleep_duration_2).await;
+    }
+    // Note: This loop is infinite, so Ok(()) is technically unreachable unless the loop breaks.
+    // If we wanted it to be stoppable, we'd need a different mechanism (e.g., checking an AtomicBool).
+    #[allow(unreachable_code)]
+    Ok(())
+}
+
 
 async fn handle_guild_member_addition(ctx: &Context, new_member: &Member, data: &Data) -> Result<(), Error> {
     info!("User {} joined guild {}", new_member.user.name, new_member.guild_id);

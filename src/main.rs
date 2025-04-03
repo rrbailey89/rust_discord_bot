@@ -101,36 +101,6 @@ async fn send_due_reminders_internal(http: &serenity::Http, data: &Data) -> Resu
 }
 
 
-async fn update_presence(ctx: serenity::Context, data: Arc<Data>) -> Result<(), Error> {
-    // Log that we're updating presence
-    let _ = data.logging.log_command_execution("update_presence", None, None); // Prefix unused result
-    loop {
-        let activity = ActivityData::custom("Use /help to learn more");
-        // Remove .await again
-        ctx.set_presence(Some(activity), OnlineStatus::Online);
-
-        let sleep_duration = {
-            let mut rng = thread_rng();
-            // Note: gen_range is deprecated
-            Duration::from_secs(rng.gen_range(600..=900))
-        };
-        sleep(sleep_duration).await;
-
-        let blame_count = data.database.get_blame_count().await?;
-        let activity = ActivityData::custom(format!("Serena's blame count: {}", blame_count));
-         // Remove .await again
-        ctx.set_presence(Some(activity), OnlineStatus::Online);
-
-        let sleep_duration = {
-            let mut rng = thread_rng();
-             // Note: gen_range is deprecated
-            Duration::from_secs(rng.gen_range(600..=900))
-        };
-        sleep(sleep_duration).await;
-    }
-}
-
-
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // Load configuration first
