@@ -17,7 +17,7 @@ use tracing::{error, warn, info, debug}; // Added info, debug
 use poise::serenity_prelude::{Ready, OnlineStatus, ActivityData}; // Added Ready, OnlineStatus, ActivityData
 use std::sync::Arc; // Added Arc
 use tokio::time::{sleep, Duration}; // Added sleep, Duration
-use rand::{Rng, thread_rng}; // Added Rng, thread_rng
+use rand::{Rng, rng}; // Updated to use rng instead of thread_rng
 
 pub async fn handle_event(
     ctx: &Context,
@@ -130,11 +130,25 @@ pub async fn update_presence(ctx: Context, data: Arc<Data>) -> Result<(), Error>
 
         // Sleep for a random duration
         let sleep_duration_1 = {
-            let mut rng = thread_rng();
-            Duration::from_secs(rng.gen_range(600..=900)) // 10-15 minutes
+            let mut rng = rng(); // Using updated function name
+            Duration::from_secs(rng.random_range(600..=900)) // 10-15 minutes
         };
         debug!("Sleeping for {:?}", sleep_duration_1);
         sleep(sleep_duration_1).await;
+
+        // Set website presence
+        let activity_website = ActivityData::custom("https://blameserena.app/");
+        ctx.set_presence(Some(activity_website), OnlineStatus::Online);
+        debug!("Presence set to: https://blameserena.app/");
+
+        // Sleep for another random duration
+        let sleep_duration_2 = {
+            let mut rng = rng(); // Using updated function name
+            // random_range with ..= is correct for inclusive range
+            Duration::from_secs(rng.random_range(600..=900))
+        };
+        debug!("Sleeping for {:?}", sleep_duration_2);
+        sleep(sleep_duration_2).await;
 
         // Fetch blame count and set presence
         match data.database.get_blame_count().await {
@@ -149,13 +163,14 @@ pub async fn update_presence(ctx: Context, data: Arc<Data>) -> Result<(), Error>
             }
         }
 
-        // Sleep again before looping
-        let sleep_duration_2 = {
-            let mut rng = thread_rng();
-            Duration::from_secs(rng.gen_range(600..=900)) // 10-15 minutes
+        // Sleep again before looping back to the help message
+        let sleep_duration_3 = {
+            let mut rng = rng(); // Using updated function name
+            // random_range with ..= is correct for inclusive range
+            Duration::from_secs(rng.random_range(600..=900))
         };
-        debug!("Sleeping for {:?}", sleep_duration_2);
-        sleep(sleep_duration_2).await;
+        debug!("Sleeping for {:?}", sleep_duration_3);
+        sleep(sleep_duration_3).await;
     }
     // Note: This loop is infinite, so Ok(()) is technically unreachable unless the loop breaks.
     // If we wanted it to be stoppable, we'd need a different mechanism (e.g., checking an AtomicBool).
