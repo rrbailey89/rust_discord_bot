@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::services::database::DatabaseService;
 use crate::web::models::guild::{GuildSettings, UpdateGuildSettingsRequest};
 use crate::web::models::auth::Guild;
-use serde_json::Value as JsonValue; // Import serde_json Value
+use serde_json::{Value as JsonValue, Map}; // Import serde_json Value and Map
 use tokio_postgres::error::SqlState; // Import SqlState for error handling
 use tracing::{debug, error, info, warn}; // Added warn
 
@@ -130,18 +130,63 @@ impl GuildService {
              debug!("Prepared URL rule update for guild {}: {}", guild_id, rule);
         }
 
-        // --- Persist updated settings JSONB ---
-        // Use INSERT ... ON CONFLICT to handle cases where the guild might not exist yet
+        // Merge incoming nested settings if provided
+        if let Some(incoming_settings) = &request.settings {
+            if let Some(incoming_map) = incoming_settings.as_object() {
+                debug!("Merging incoming nested settings for guild {}", guild_id);
+                for (key, value) in incoming_map {
+                    settings_map.insert(key.clone(), value.clone());
+                }
+            } else {
+                warn!("Incoming settings for guild {} was not a JSON object, skipping merge.", guild_id);
+            }
+        }
+
+        // --- Persist updated settings JSONB and top-level fields ---
+        // Use INSERT ... ON CONFLICT for initial row creation or updating settings JSONB
+        // We handle other top-level fields separately for clarity
         client
             .execute(
                 "INSERT INTO guild_settings (guild_id, settings)
                  VALUES ($1, $2)
                  ON CONFLICT (guild_id) DO UPDATE
                  SET settings = $2", // Update the entire settings object
-                &[&guild_id, &current_settings],
+                &[&guild_id, &current_settings], // Use the potentially merged current_settings
             )
             .await?;
         debug!("Persisted updated settings JSONB for guild {}", guild_id);
+
+        // Update top-level fields individually if provided
+        if let Some(prefix) = &request.prefix {
+            client
+                .execute(
+                    "UPDATE guild_settings SET prefix = $2 WHERE guild_id = $1",
+                    &[&guild_id, prefix],
+                )
+                .await?;
+            debug!("Updated prefix for guild {} to '{}'", guild_id, prefix);
+        }
+        if let Some(mod_role_id) = request.mod_role_id {
+             client
+                .execute(
+                    "UPDATE guild_settings SET mod_role_id = $2 WHERE guild_id = $1",
+                    &[&guild_id, &mod_role_id],
+                )
+                .await?;
+             debug!("Updated mod_role_id for guild {}", guild_id);
+        }
+        if let Some(admin_role_id) = request.admin_role_id {
+             client
+                .execute(
+                    "UPDATE guild_settings SET admin_role_id = $2 WHERE guild_id = $1",
+                    &[&guild_id, &admin_role_id],
+                )
+                .await?;
+             debug!("Updated admin_role_id for guild {}", guild_id);
+        }
+
+
+        // --- Update Channel IDs in guild_channels table ---
 
         // Update level up channel if provided
         if let Some(channel_id) = &request.level_up_channel_id {

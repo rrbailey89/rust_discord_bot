@@ -14,7 +14,7 @@ use crate::services::database::DatabaseService;
 use crate::services::{LoggingService, MetricsService};
 use crate::services::cache::CacheService;
 use crate::error::Error;
-use poise::serenity_prelude as serenity;
+use poise::{serenity_prelude as serenity, PartialContext, BoxFuture}; // Added PartialContext and BoxFuture
 use poise::serenity_prelude::{ChannelId, CreateMessage, OnlineStatus, ActivityData, Command as SerenityCommand}; // Added SerenityCommand
 use serenity::GatewayIntents;
 use std::sync::Arc;
@@ -280,7 +280,8 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
         .options(poise::FrameworkOptions {
             commands: commands::get_commands(),
             prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Some(config_clone.bot.command_prefix.clone()),
+                prefix: None, // Use dynamic prefix instead
+                dynamic_prefix: Some(get_dynamic_prefix), // Assign function pointer directly
                 edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
                     Duration::from_secs(3600)
                 ))),
@@ -625,4 +626,46 @@ async fn start_discord_bot(app_data: Arc<Data>) -> Result<(), Error> {
     }
 
     client.start_autosharded().await.map_err(Error::from)
+}
+
+/// Dynamically determines the prefix for a guild.
+// Modify return type to match expected BoxFuture
+fn get_dynamic_prefix(ctx: PartialContext<'_, Data, Error>) -> BoxFuture<'_, Result<Option<String>, Error>> {
+    Box::pin(async move { // Wrap the body in Box::pin
+        // Only guilds can have custom prefixes
+        let guild_id = match ctx.guild_id { // Access field directly
+            Some(id) => id.get() as i64,
+        None => return Ok(None), // No prefix in DMs
+    };
+
+    debug!("Fetching prefix for guild_id: {}", guild_id);
+
+    // Access the database service from the shared Data
+    let db = &ctx.data.database;
+    let client = db.get_client().await?;
+
+    // Query for the prefix
+    let row_opt = client
+        .query_opt(
+            "SELECT prefix FROM guild_settings WHERE guild_id = $1",
+            &[&guild_id],
+        )
+        .await?;
+
+    match row_opt {
+        Some(row) => {
+            let prefix: Option<String> = row.get(0);
+            if let Some(ref p) = prefix {
+                debug!("Found prefix '{}' for guild_id: {}", p, guild_id);
+            } else {
+                debug!("No custom prefix found for guild_id: {}", guild_id);
+            }
+            Ok(prefix) // Return the fetched prefix (or None if it's NULL in DB)
+        }
+        None => {
+            debug!("No settings row found for guild_id: {}", guild_id);
+            Ok(None) // No settings row means no custom prefix
+            }
+        }
+    }) // Close Box::pin
 }

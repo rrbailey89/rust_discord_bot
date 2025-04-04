@@ -228,8 +228,8 @@ const SettingsForm: React.FC = () => {
          warn_channel_id: settingsToUpdate.warn_channel_id?.toString() || null,
          delete_log_channel_id: settingsToUpdate.delete_log_channel_id?.toString() || null,
          reaction_log_channel_id: settingsToUpdate.reaction_log_channel_id?.toString() || null,
-         // Include other fields from UpdateGuildSettingsRequest if the form edits them
-         // e.g., settings: settingsToUpdate.settings // If backend accepted the whole object
+         // Include the nested settings object in the payload
+         settings: settingsToUpdate.settings,
        };
        return updateGuildSettings(guildId!, payload);
     },
