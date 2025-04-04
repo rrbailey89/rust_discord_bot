@@ -136,6 +136,19 @@ const GuildList: React.FC = () => {
     navigate(`/analytics?guildId=${guildId}`); // Navigate to analytics page with guildId query param
   };
 
+  // Handler to redirect user to Discord OAuth flow
+  const handleAddBot = (guildId: string) => {
+    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
+    const permissions = '564584457432311'; // Use the specified permissions integer
+    if (!clientId) {
+      console.error('VITE_DISCORD_CLIENT_ID is not set in environment variables.');
+      // Optionally show an error message to the user
+      return;
+    }
+    const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&guild_id=${guildId}&permissions=${permissions}&scope=bot%20applications.commands`;
+    window.location.href = inviteUrl;
+  };
+
   // Render loading state
   if (isLoading) {
     return (
@@ -183,6 +196,7 @@ const GuildList: React.FC = () => {
             onCommands={handleCommands}
             onWordDetection={handleWordDetection}
             onAnalytics={handleAnalytics} // Pass the new handler
+            onAddBot={handleAddBot} // Pass the add bot handler
           />
         ))
       ) : (

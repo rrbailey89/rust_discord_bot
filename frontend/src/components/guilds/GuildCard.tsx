@@ -124,6 +124,7 @@ interface GuildCardProps {
   onCommands: (guildId: string) => void;
   onWordDetection: (guildId: string) => void;
   onAnalytics: (guildId: string) => void; // Add onAnalytics prop
+  onAddBot: (guildId: string) => void; // Add onAddBot prop
 }
 
 // Helper function to convert Discord icon hash to URL or use provided URL
@@ -142,7 +143,8 @@ const GuildCard: React.FC<GuildCardProps> = ({
   onSettings,
   onCommands,
   onWordDetection,
-  onAnalytics // Destructure the new prop
+  onAnalytics, // Destructure the new prop
+  onAddBot // Destructure the add bot prop
 }) => {
   return (
     <Card>
@@ -203,6 +205,15 @@ const GuildCard: React.FC<GuildCardProps> = ({
         >
           Analytics
         </ActionButton>
+        {/* Conditionally render Add Bot button */}
+        {!guild.botJoined && (
+          <ActionButton
+            variant="primary" // Or another appropriate variant
+            onClick={() => onAddBot(guild.id)}
+          >
+            Add Bot
+          </ActionButton>
+        )}
       </Actions>
     </Card>
   );
