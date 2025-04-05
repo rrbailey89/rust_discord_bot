@@ -286,6 +286,7 @@ const SettingsForm: React.FC = () => {
           currentLevel = currentLevel[keys[i]];
         }
         currentLevel[keys[keys.length - 1]] = val;
+        console.log(`Nested state updated for ${name}:`, newState); // Log state right after update
         return newState;
       });
     };
@@ -306,10 +307,14 @@ const SettingsForm: React.FC = () => {
         finalValue = value === '' ? null : Number(value);
       }
 
-      setFormState(prev => ({
-        ...prev,
-        [name]: finalValue,
-      }));
+      setFormState(prev => {
+        const newState = {
+          ...prev,
+          [name]: finalValue,
+        };
+        console.log(`State updated for ${name}:`, newState); // Log state right after update
+        return newState;
+      });
     }
   };
 
