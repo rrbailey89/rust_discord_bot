@@ -250,9 +250,15 @@ const SettingsForm: React.FC = () => {
     },
     onSuccess: (data) => { // API response might contain success/message
       console.log("Settings updated successfully:", data);
+      // Invalidate queries to ensure fresh data on potential future fetches
       queryClient.invalidateQueries({ queryKey: ['guildSettings', numericGuildId] });
+      queryClient.invalidateQueries({ queryKey: ['guildDetails', guildId] }); // Also invalidate details if channels changed
+
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      // Reload the page after a short delay to show success message
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500); // Reload after 1.5 seconds
     },
     onError: (error) => {
       console.error("Error updating settings:", error);
