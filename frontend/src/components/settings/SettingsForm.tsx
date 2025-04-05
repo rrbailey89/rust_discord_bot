@@ -131,27 +131,24 @@ const SuccessMessage = styled.div`
 `;
 
 const SettingsForm: React.FC = () => {
-  const { guildId } = useParams<{ guildId: string }>();
+  const { guildId } = useParams<{ guildId: string }>(); // guildId is already a string here
   const queryClient = useQueryClient();
 
-  // Fetch current settings using the correct guildId type (number) if needed by API function
-  const numericGuildId = guildId ? parseInt(guildId, 10) : undefined;
-
-  const { data: fetchedSettings, isLoading, error } = useQuery({
-    queryKey: ['guildSettings', numericGuildId],
-    // Ensure fetchGuildSettings expects string or number as needed
-    queryFn: () => fetchGuildSettings(guildId!),
+  // Fetch current settings using the string guildId
+  const { data: fetchedSettings, isLoading: isLoadingSettings, error: settingsError } = useQuery({
+    queryKey: ['guildSettings', guildId], // Use string guildId in query key
+    queryFn: () => fetchGuildSettings(guildId!), // Pass string guildId
     enabled: !!guildId,
     // Keep data fresh but avoid rapid refetching on focus/mount
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
   });
 
-  // Fetch guild details (including channels)
-  const { data: guildDetails } = useQuery<Guild, Error>({ // Use Guild type here
-    queryKey: ['guildDetails', guildId],
-    queryFn: () => fetchGuildDetails(guildId!),
-    enabled: !!guildId,
+  // Fetch guild details (including channels) using string guildId
+  const { data: guildDetails, isLoading: isLoadingDetails } = useQuery<Guild, Error>({ // Use Guild type here
+    queryKey: ['guildDetails', guildId], // Use string guildId in query key
+    queryFn: () => fetchGuildDetails(guildId!), // Pass string guildId
+    enabled: !!guildId, // Enable only if guildId exists
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
@@ -162,12 +159,11 @@ const SettingsForm: React.FC = () => {
 
 
   // Initialize form state with defaults matching the NEW GuildSettingsType (using string IDs)
-  // Use null for optional fields where appropriate
   const [isInitialLoad, setIsInitialLoad] = useState(true); // Flag for initial load
   const [formState, setFormState] = useState<Partial<GuildSettingsType>>({
     guild_id: guildId || '', // Use string guildId from params
     prefix: null,
-    mod_role_id: null, // Initialize as null (will become string | null)
+    mod_role_id: null,
     admin_role_id: null, // Initialize as null (will become string | null)
     settings: { // Initialize nested settings object
       autoModeration: {
@@ -193,13 +189,13 @@ const SettingsForm: React.FC = () => {
     // moderationEnabled: true, // Example: If this concept is handled differently, remove/update
   });
 
-  // Update form state when settings are loaded/refetched
+  // Update form state only when BOTH settings and channels are loaded initially
   useEffect(() => {
-    console.log("useEffect [fetchedSettings] running...", { isInitialLoad, fetchedSettings }); // Add log
-    // Only apply fetched settings on initial load or if fetchedSettings becomes available
-    if (fetchedSettings && isInitialLoad) {
-      console.log("Applying fetched settings to form state (initial load)..."); // Add log
-      // Merge fetched settings into the state, preserving defaults for missing fields
+    console.log("useEffect [fetchedSettings, guildDetails] running...", { isInitialLoad, fetchedSettings, guildDetails });
+    // Wait for initial load and both data sources
+    if (isInitialLoad && fetchedSettings && guildDetails) {
+      console.log("Applying fetched settings to form state (initial load with channels)...");
+      // Merge fetched settings into the state
       setFormState(prev => ({
         ...prev, // Keep existing state (like guild_id)
         ...fetchedSettings, // Overwrite with fetched data
@@ -223,14 +219,15 @@ const SettingsForm: React.FC = () => {
         delete_log_channel_id: fetchedSettings.delete_log_channel_id ?? null,
         reaction_log_channel_id: fetchedSettings.reaction_log_channel_id ?? null,
       }));
-      console.log("Fetched settings applied (initial load):", fetchedSettings);
+      console.log("Fetched settings applied (initial load with channels):", fetchedSettings);
       setIsInitialLoad(false); // Mark initial load as complete
-    } else if (!fetchedSettings) {
-        console.log("useEffect [fetchedSettings]: No fetchedSettings data yet."); // Log for else case
-    } else if (!isInitialLoad) {
-        console.log("useEffect [fetchedSettings]: Skipping state update, not initial load."); // Log skip
+    } else if (isInitialLoad) {
+        console.log("useEffect: Still waiting for initial data (settings or details).");
+    } else {
+        console.log("useEffect: Skipping state update, not initial load.");
     }
-  }, [fetchedSettings, isInitialLoad]); // Add isInitialLoad to dependency array
+    // Depend on both fetchedSettings and guildDetails to ensure channels are ready
+  }, [fetchedSettings, guildDetails, isInitialLoad]);
 
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -259,8 +256,8 @@ const SettingsForm: React.FC = () => {
     },
     onSuccess: (data) => { // API response might contain success/message
       console.log("Settings updated successfully:", data);
-      // Invalidate queries to ensure fresh data on potential future fetches
-      queryClient.invalidateQueries({ queryKey: ['guildSettings', numericGuildId] });
+      // Invalidate queries using the string guildId
+      queryClient.invalidateQueries({ queryKey: ['guildSettings', guildId] });
       queryClient.invalidateQueries({ queryKey: ['guildDetails', guildId] }); // Also invalidate details if channels changed
 
       setSaveSuccess(true);
@@ -279,8 +276,8 @@ const SettingsForm: React.FC = () => {
     const { name, value, type } = e.target;
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : undefined;
     console.log(`handleChange - name: ${name}, type: ${type}, checked: ${checked}, value: ${value}`);
-    // Identify ID fields that should remain strings
-    const isIdField = ['guild_id', 'mod_role_id', 'admin_role_id', 'level_up_channel_id', 'warn_channel_id', 'delete_log_channel_id', 'reaction_log_channel_id'].includes(name) || name.endsWith('channelId');
+    // Identify ID fields that should remain strings (guild_id is not directly editable here)
+    const isIdField = ['mod_role_id', 'admin_role_id', 'level_up_channel_id', 'warn_channel_id', 'delete_log_channel_id', 'reaction_log_channel_id'].includes(name) || name.endsWith('channelId');
 
     // Function to update nested state within the 'settings' object
     const updateNestedSetting = (keys: string[], val: any) => {
@@ -314,9 +311,9 @@ const SettingsForm: React.FC = () => {
         finalValue = checked;
       } else if (isIdField) {
         // Keep ID fields as strings, use null if empty string
-        finalValue = value === '' ? null : value;
+        finalValue = value === '' ? null : value; // Store as string or null
       } else {
-        // Handle other types (e.g., prefix, url_rule) - keep as string or handle specific types if needed
+        // Handle other types (e.g., prefix, url_rule)
         finalValue = value;
       }
 
@@ -332,7 +329,6 @@ const SettingsForm: React.FC = () => {
       });
     }
   };
-
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,8 +364,13 @@ const SettingsForm: React.FC = () => {
     }
   };
 
-  if (isLoading) return <div>Loading settings...</div>;
-  // Display error from fetching
+  // Combined loading state
+  const isLoading = isLoadingSettings || isLoadingDetails;
+  // Combined error state
+  const error = settingsError; // Prioritize settings error for display
+
+  if (isLoading) return <div>Loading settings and guild details...</div>;
+  // Display error from fetching settings
   if (error) return <div>Error loading settings: {String(error)}</div>;
   // Display error from mutation
   const mutationError = mutation.error ? String(mutation.error) : null;
