@@ -101,9 +101,11 @@ impl GuildService {
         guild_id: i64,
         request: &UpdateGuildSettingsRequest,
     ) -> Result<(), Error> {
+        debug!("Received update request for guild {}: {:?}", guild_id, request); // Log incoming request
         let client = self.db.get_client().await?;
 
         // Fetch current settings JSONB to merge updates
+        debug!("Fetching current settings for guild {}", guild_id);
         let current_settings_row = client
             .query_opt("SELECT settings FROM guild_settings WHERE guild_id = $1", &[&guild_id])
             .await?;
@@ -159,7 +161,7 @@ impl GuildService {
                 &[&guild_id, &current_settings], // Use the potentially merged current_settings
             )
             .await?;
-        debug!("Persisted updated settings JSONB for guild {}", guild_id);
+        debug!("Persisted updated settings JSONB for guild {}: {:?}", guild_id, &current_settings); // Log the JSON being saved
 
         // Update top-level fields individually if provided
         if let Some(prefix) = &request.prefix {
