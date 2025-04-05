@@ -202,83 +202,83 @@ impl GuildService {
         // --- Update Channel IDs in guild_channels table ---
 
         // Update level up channel if provided
-        if let Some(channel_id) = &request.level_up_channel_id {
+        if let Some(channel_id_str) = &request.level_up_channel_id {
             // Parse channel ID to ensure it's valid
-            let _channel_id_i64 = channel_id.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid channel ID format: {}", channel_id))
+            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
+                Error::Unknown(format!("Invalid level_up_channel_id format: {}", channel_id_str))
             })?;
-            
+
             client
                 .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id) 
+                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type) 
+                    ON CONFLICT (guild_id, channel_type)
                     DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"level_up", channel_id],
+                    &[&guild_id, &"level_up", &channel_id_i64], // Use the parsed i64
                 )
                 .await?;
-                
-            debug!("Updated level_up channel for guild {} to {}", guild_id, channel_id);
+
+            debug!("Updated level_up channel for guild {} to {}", guild_id, channel_id_str);
         }
-        
+
         // Update warn channel if provided
-        if let Some(channel_id) = &request.warn_channel_id {
+        if let Some(channel_id_str) = &request.warn_channel_id {
             // Parse channel ID to ensure it's valid
-            let _channel_id_i64 = channel_id.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid channel ID format: {}", channel_id))
+            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
+                Error::Unknown(format!("Invalid warn_channel_id format: {}", channel_id_str))
             })?;
-            
+
             client
                 .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id) 
+                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type) 
+                    ON CONFLICT (guild_id, channel_type)
                     DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"warn", channel_id],
+                    &[&guild_id, &"warn", &channel_id_i64], // Use the parsed i64
                 )
                 .await?;
-                
-            debug!("Updated warn channel for guild {} to {}", guild_id, channel_id);
+
+            debug!("Updated warn channel for guild {} to {}", guild_id, channel_id_str);
         }
-        
+
         // Update delete log channel if provided
-        if let Some(channel_id) = &request.delete_log_channel_id {
+        if let Some(channel_id_str) = &request.delete_log_channel_id {
             // Parse channel ID to ensure it's valid
-            let _channel_id_i64 = channel_id.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid channel ID format: {}", channel_id))
+            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
+                Error::Unknown(format!("Invalid delete_log_channel_id format: {}", channel_id_str))
             })?;
-            
+
             client
                 .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id) 
+                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type) 
+                    ON CONFLICT (guild_id, channel_type)
                     DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"delete_log", channel_id],
+                    &[&guild_id, &"delete_log", &channel_id_i64], // Use the parsed i64
                 )
                 .await?;
-                
-            debug!("Updated delete_log channel for guild {} to {}", guild_id, channel_id);
+
+            debug!("Updated delete_log channel for guild {} to {}", guild_id, channel_id_str);
         }
-        
+
         // Update reaction log channel if provided
-        if let Some(channel_id) = &request.reaction_log_channel_id {
+        if let Some(channel_id_str) = &request.reaction_log_channel_id {
             // Parse channel ID to ensure it's valid
-            let _channel_id_i64 = channel_id.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid channel ID format: {}", channel_id))
+            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
+                Error::Unknown(format!("Invalid reaction_log_channel_id format: {}", channel_id_str))
             })?;
-            
+
             client
                 .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id) 
+                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type) 
+                    ON CONFLICT (guild_id, channel_type)
                     DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"reaction_log", channel_id],
+                    &[&guild_id, &"reaction_log", &channel_id_i64], // Use the parsed i64
                 )
                 .await?;
-                
-            debug!("Updated reaction_log channel for guild {} to {}", guild_id, channel_id);
+
+            debug!("Updated reaction_log channel for guild {} to {}", guild_id, channel_id_str);
         }
 
         info!("Successfully updated settings for guild {}", guild_id);
