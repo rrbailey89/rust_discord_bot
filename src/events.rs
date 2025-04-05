@@ -1,4 +1,4 @@
-// src/events.rs (Updated with Analytics Logging & Corrected Reaction Handling)
+// src/events.rs (Corrected ID Handling, Logging, and Structure)
 use crate::emoji_reaction::handle_message;
 use crate::error::Error;
 use crate::Data;
@@ -73,7 +73,9 @@ pub async fn handle_event(
                     // Assuming fetch_unavailability_channel returns Option<i64>
                     if let Some(unavailability_channel_id_i64) = data.database.fetch_unavailability_channel(guild_id.get() as i64).await? {
                         if new_message.channel_id.get() == unavailability_channel_id_i64 as u64 { // Cast for comparison
-                            new_message.delete(&ctx.http).await?;
+                            if let Err(e) = new_message.delete(&ctx.http).await {
+                                error!("Failed to delete message in unavailability channel: {}", e);
+                            }
                         }
                     }
                 }
@@ -144,7 +146,7 @@ pub async fn update_presence(ctx: Context, data: Arc<Data>) -> Result<(), Error>
         debug!("Sleeping for {:?}", sleep_duration_3);
         sleep(sleep_duration_3).await;
     }
-    #[allow(unreachable_code)]
+    #[allow(unreachable_code)] // This function loops indefinitely
     Ok(())
 }
 
@@ -197,7 +199,6 @@ async fn handle_guild_create(ctx: &Context, guild: &Guild, data: &Data) -> Resul
     let guild_id_clone = guild.id;
     let guild_id_i64 = guild.id.get() as i64;
     let database = data.database.clone();
-    // let _guild_roles = guild.roles.clone(); // Marked as unused
 
     tokio::spawn(async move {
         info!("Starting background task to fetch members for guild {}", guild_id_i64);
@@ -229,29 +230,46 @@ async fn handle_message_delete(
     data: &Data,
 ) -> Result<(), Error> {
     if let Some(gid) = guild_id {
-        // Assuming fetch_delete_log_channel returns Option<i64>
-        if let Some(log_channel_id_i64) = data.database.fetch_delete_log_channel(gid.get() as i64).await? {
-            let log_channel = ChannelId::new(log_channel_id_i64 as u64); // Cast i64 to u64
-            let message_content = ctx.cache.message(channel_id, deleted_message_id).map(|msg| (msg.content.clone(), msg.author.id, msg.timestamp));
+        let guild_service = GuildService::new(data.database.clone());
+        match guild_service.get_guild_settings(gid.get() as i64).await {
+            Ok(settings) => {
+                if let Some(log_channel_id_str) = settings.delete_log_channel_id {
+                    match log_channel_id_str.parse::<u64>() {
+                        Ok(log_channel_id_u64) => {
+                            debug!("Found delete log channel {} for guild {}", log_channel_id_u64, gid);
+                            let log_channel = ChannelId::new(log_channel_id_u64);
+                            let message_content = ctx.cache.message(channel_id, deleted_message_id).map(|msg| (msg.content.clone(), msg.author.id, msg.timestamp));
 
-            if let Some((content, author_id, timestamp)) = message_content {
-                let embed = CreateEmbed::default()
-                    .title("Message Deleted")
-                    .description(format!("A message from <@{}> was deleted in <#{}>", author_id, channel_id))
-                    .field("Content", content, false)
-                    .field("Message ID", deleted_message_id.to_string(), true)
-                    .field("Author ID", author_id.to_string(), true)
-                    .timestamp(timestamp)
-                    .footer(CreateEmbedFooter::new(format!("Message sent at {}", timestamp.format("%Y-%m-%d %H:%M:%S UTC"))))
-                    .color(0xFF0000);
-                let message = CreateMessage::default().embed(embed);
-                if let Err(e) = log_channel.send_message(&ctx.http, message).await {
-                    error!("Failed to send delete log message: {}", e);
+                            if let Some((content, author_id, timestamp)) = message_content {
+                                let embed = CreateEmbed::default()
+                                    .title("Message Deleted")
+                                    .description(format!("A message from <@{}> was deleted in <#{}>", author_id, channel_id))
+                                    .field("Content", content, false)
+                                    .field("Message ID", deleted_message_id.to_string(), true)
+                                    .field("Author ID", author_id.to_string(), true)
+                                    .timestamp(timestamp)
+                                    .footer(CreateEmbedFooter::new(format!("Message sent at {}", timestamp.format("%Y-%m-%d %H:%M:%S UTC"))))
+                                    .color(0xFF0000);
+                                let message = CreateMessage::default().embed(embed);
+                                if let Err(e) = log_channel.send_message(&ctx.http, message).await {
+                                    error!("Failed to send delete log message: {}", e);
+                                }
+                            } else {
+                                if let Err(e) = log_channel.say(&ctx.http, format!("A message was deleted in <#{}>\nMessage ID: {}", channel_id, deleted_message_id)).await {
+                                    error!("Failed to send simple delete log message: {}", e);
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            error!("Failed to parse delete_log_channel_id '{}' as u64 for guild {}", log_channel_id_str, gid);
+                        }
+                    }
+                } else {
+                    debug!("Delete log channel not configured for guild {}", gid);
                 }
-            } else {
-                if let Err(e) = log_channel.say(&ctx.http, format!("A message was deleted in <#{}>\nMessage ID: {}", channel_id, deleted_message_id)).await {
-                    error!("Failed to send simple delete log message: {}", e);
-                }
+            },
+            Err(e) => {
+                error!("Failed to fetch guild settings for delete log in guild {}: {}", gid, e);
             }
         }
     }
@@ -266,30 +284,47 @@ async fn handle_message_delete_bulk(
     data: &Data,
 ) -> Result<(), Error> {
     if let Some(gid) = guild_id {
-        // Assuming fetch_delete_log_channel returns Option<i64>
-        if let Some(log_channel_id_i64) = data.database.fetch_delete_log_channel(gid.get() as i64).await? {
-            let log_channel = ChannelId::new(log_channel_id_i64 as u64); // Cast i64 to u64
-            if let Err(e) = log_channel.say(&ctx.http, format!("Bulk message deletion in <#{}>\nNumber of messages deleted: {}", channel_id, multiple_deleted_messages_ids.len())).await {
-                 error!("Failed to send bulk delete initial log message: {}", e);
-            }
+        let guild_service = GuildService::new(data.database.clone());
+        match guild_service.get_guild_settings(gid.get() as i64).await {
+            Ok(settings) => {
+                if let Some(log_channel_id_str) = settings.delete_log_channel_id {
+                    match log_channel_id_str.parse::<u64>() {
+                        Ok(log_channel_id_u64) => {
+                            debug!("Found delete log channel {} for bulk delete in guild {}", log_channel_id_u64, gid);
+                            let log_channel = ChannelId::new(log_channel_id_u64);
+                            if let Err(e) = log_channel.say(&ctx.http, format!("Bulk message deletion in <#{}>\nNumber of messages deleted: {}", channel_id, multiple_deleted_messages_ids.len())).await {
+                                 error!("Failed to send bulk delete initial log message: {}", e);
+                            }
 
-            for message_id in multiple_deleted_messages_ids {
-                let message_content = ctx.cache.message(channel_id, message_id).map(|msg| (msg.content.clone(), msg.author.id, msg.timestamp));
-                if let Some((content, author_id, timestamp)) = message_content {
-                    let embed = CreateEmbed::default()
-                        .title("Deleted Message (Bulk)")
-                        .description(format!("Author: <@{}>", author_id))
-                        .field("Content", content, false)
-                        .field("Message ID", message_id.to_string(), true)
-                        .field("Author ID", author_id.to_string(), true)
-                        .timestamp(timestamp)
-                        .footer(CreateEmbedFooter::new(format!("Message sent at {}", timestamp.format("%Y-%m-%d %H:%M:%S UTC"))))
-                        .color(0xFF0000);
-                    let message = CreateMessage::default().embed(embed);
-                    if let Err(e) = log_channel.send_message(&ctx.http, message).await {
-                        error!("Failed to send bulk delete detail message for {}: {}", message_id, e);
+                            for message_id in multiple_deleted_messages_ids {
+                                let message_content = ctx.cache.message(channel_id, message_id).map(|msg| (msg.content.clone(), msg.author.id, msg.timestamp));
+                                if let Some((content, author_id, timestamp)) = message_content {
+                                    let embed = CreateEmbed::default()
+                                        .title("Deleted Message (Bulk)")
+                                        .description(format!("Author: <@{}>", author_id))
+                                        .field("Content", content, false)
+                                        .field("Message ID", message_id.to_string(), true)
+                                        .field("Author ID", author_id.to_string(), true)
+                                        .timestamp(timestamp)
+                                        .footer(CreateEmbedFooter::new(format!("Message sent at {}", timestamp.format("%Y-%m-%d %H:%M:%S UTC"))))
+                                        .color(0xFF0000);
+                                    let message = CreateMessage::default().embed(embed);
+                                    if let Err(e) = log_channel.send_message(&ctx.http, message).await {
+                                        error!("Failed to send bulk delete detail message for {}: {}", message_id, e);
+                                    }
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            error!("Failed to parse delete_log_channel_id '{}' as u64 for bulk delete in guild {}", log_channel_id_str, gid);
+                        }
                     }
+                } else {
+                    debug!("Delete log channel not configured for bulk delete in guild {}", gid);
                 }
+            },
+            Err(e) => {
+                error!("Failed to fetch guild settings for bulk delete log in guild {}: {}", gid, e);
             }
         }
     }
@@ -306,11 +341,26 @@ async fn handle_message_for_leveling(ctx: &Context, msg: &Message, data: &Data) 
 
     while new_exp >= calculate_required_exp(current_level + 1) {
         current_level += 1;
-        // Assuming get_level_up_channel returns Option<i64>
-        if let Some(channel_id_i64) = data.database.get_level_up_channel(guild_id.get() as i64).await? {
-            let channel = ChannelId::new(channel_id_i64 as u64); // Cast i64 to u64
-            if let Err(e) = channel.say(&ctx.http, format!("🎉 Congratulations <@{}>! You've reached level {}!", user_id, current_level)).await {
-                error!("Failed to send level up message to channel {}: {}", channel_id_i64, e);
+        // Fetch level up channel using GuildService
+        let guild_service = GuildService::new(data.database.clone());
+        match guild_service.get_guild_settings(guild_id.get() as i64).await {
+            Ok(settings) => {
+                if let Some(channel_id_str) = settings.level_up_channel_id {
+                    match channel_id_str.parse::<u64>() {
+                        Ok(channel_id_u64) => {
+                            let channel = ChannelId::new(channel_id_u64);
+                            if let Err(e) = channel.say(&ctx.http, format!("🎉 Congratulations <@{}>! You've reached level {}!", user_id, current_level)).await {
+                                error!("Failed to send level up message to channel {}: {}", channel_id_u64, e);
+                            }
+                        },
+                        Err(_) => {
+                            error!("Failed to parse level_up_channel_id '{}' as u64 for guild {}", channel_id_str, guild_id);
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                 error!("Failed to fetch guild settings for level up message in guild {}: {}", guild_id, e);
             }
         }
     }
@@ -389,10 +439,10 @@ async fn handle_reaction_add(ctx: &Context, reaction: &Reaction) -> Result<(), E
                     // reaction_log_channel_id is Option<String> in GuildSettings
                     if let Some(log_channel_id_str) = settings.reaction_log_channel_id {
                         // Parse the string ID to u64
-                        match log_channel_id_str.parse::<u64>() { // Corrected: Parse the string inside Option
+                        match log_channel_id_str.parse::<u64>() {
                             Ok(log_channel_id_u64) => {
                                 debug!("Found reaction log channel {} for guild {}", log_channel_id_u64, guild_id);
-                                let reaction_log_channel = ChannelId::new(log_channel_id_u64); // Already u64
+                                let reaction_log_channel = ChannelId::new(log_channel_id_u64);
                                 let emoji_name = match &reaction.emoji {
                                     ReactionType::Custom { id, name, .. } => name.as_ref().map_or_else(|| id.to_string(), |s| s.clone()),
                                     ReactionType::Unicode(s) => s.clone(),
