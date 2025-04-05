@@ -25,44 +25,47 @@ impl GuildService {
     pub async fn get_guild_settings(&self, guild_id: i64) -> Result<GuildSettings, Error> {
         let client = self.db.get_client().await?;
 
-        // Query relevant settings from guild_settings and guild_channels
-        // Query relevant settings from guild_settings and join/subquery guild_channels
+        // Query relevant settings directly from guild_settings table
         let row_opt = client
             .query_opt(
                 "SELECT
-                    gs.prefix,                     -- Fetch prefix
-                    gs.mod_role_id,                -- Fetch mod_role_id
-                    gs.admin_role_id,              -- Fetch admin_role_id
-                    gs.settings,                   -- Fetch the entire JSONB settings object
-                    (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'level_up') as level_up_channel_id,
-                    (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'warn') as warn_channel_id,
-                    (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'delete_log') as delete_log_channel_id,
-                    (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'reaction_log') as reaction_log_channel_id
-                 FROM guild_settings gs
-                 WHERE gs.guild_id = $1",
+                    prefix,                     -- 0
+                    mod_role_id,                -- 1
+                    admin_role_id,              -- 2
+                    settings,                   -- 3: Fetch the entire JSONB settings object
+                    level_up_channel_id,        -- 4: Fetch directly from new column
+                    warn_channel_id,            -- 5: Fetch directly from new column
+                    delete_log_channel_id,      -- 6: Fetch directly from new column
+                    reaction_log_channel_id     -- 7: Fetch directly from new column
+                 FROM guild_settings
+                 WHERE guild_id = $1",
                 &[&guild_id],
             )
             .await?; // Propagate other DB errors
 
         // Extract data if row exists, otherwise use defaults
-        let (prefix, mod_role, admin_role, settings_json, lvl_chan, warn_chan, del_log_chan, react_log_chan) = match row_opt {
+        let (prefix, mod_role, admin_role, settings_json_opt, lvl_chan, warn_chan, del_log_chan, react_log_chan) = match row_opt {
             Some(row) => {
-                let pfx = row.get::<_, Option<String>>(0);
-                let mod_r = row.get::<_, Option<i64>>(1);
-                let admin_r = row.get::<_, Option<i64>>(2);
-                let json_val = row.get::<_, Option<JsonValue>>(3).unwrap_or_else(|| serde_json::json!({}));
-                let lvl = row.get::<_, Option<i64>>(4);
-                let warn_ch = row.get::<_, Option<i64>>(5);
-                let del_log = row.get::<_, Option<i64>>(6);
-                let react_log = row.get::<_, Option<i64>>(7);
+                let pfx: Option<String> = row.get(0);
+                let mod_r: Option<i64> = row.get(1);
+                let admin_r: Option<i64> = row.get(2);
+                let json_val: Option<JsonValue> = row.get(3);
+                let lvl: Option<i64> = row.get(4);
+                let warn_ch: Option<i64> = row.get(5);
+                let del_log: Option<i64> = row.get(6);
+                let react_log: Option<i64> = row.get(7);
+                // Use empty JSON object if settings column is NULL
                 (pfx, mod_r, admin_r, json_val, lvl, warn_ch, del_log, react_log)
             },
             None => {
                 // Guild not found in guild_settings, return defaults
                 debug!("No settings found for guild_id {}. Returning defaults.", guild_id);
-                (None, None, None, serde_json::json!({}), None, None, None, None)
+                (None, None, None, None, None, None, None, None)
             }
         };
+
+        // Use empty JSON if settings column was NULL or not an object
+        let settings_json = settings_json_opt.unwrap_or_else(|| serde_json::json!({}));
 
         // Extract emoji_reactions_enabled, default to true if missing or not a boolean
         let emoji_reactions_enabled = settings_json
@@ -82,7 +85,7 @@ impl GuildService {
             prefix, // Use fetched value
             mod_role_id: mod_role, // Use fetched value
             admin_role_id: admin_role, // Use fetched value
-            settings: Some(settings_json), // Store the raw JSONB
+            settings: Some(settings_json), // Store the potentially defaulted JSONB
             emoji_reactions_enabled: Some(emoji_reactions_enabled), // Use extracted value
             // Assign the correctly typed channel variables
             level_up_channel_id: lvl_chan,
@@ -103,219 +106,149 @@ impl GuildService {
     ) -> Result<(), Error> {
         debug!("Received update request for guild {}: {:?}", guild_id, request); // Log incoming request
         let client = self.db.get_client().await?;
+        let mut tx = client.transaction().await?; // Start transaction
 
-        // Fetch current settings JSONB to merge updates
-        debug!("Fetching current settings for guild {}", guild_id);
-        let current_settings_row = client
-            .query_opt("SELECT settings FROM guild_settings WHERE guild_id = $1", &[&guild_id])
-            .await?;
-
-        let mut current_settings: JsonValue = current_settings_row
-            .map(|row| row.get::<_, Option<JsonValue>>(0).unwrap_or_else(|| serde_json::json!({})))
-            .unwrap_or_else(|| serde_json::json!({}));
-
-        // Ensure current_settings is a map
-        let settings_map = match current_settings.as_object_mut() {
-            Some(map) => map,
-            None => {
-                // If it's not an object (e.g., null or other type), reset to empty object
-                warn!("Guild {} settings column was not a JSON object. Resetting.", guild_id);
-                current_settings = serde_json::json!({});
-                current_settings.as_object_mut().unwrap() // Should be safe now
-            }
-        };
-
-        // Merge incoming nested settings first (if provided)
-        if let Some(incoming_settings) = &request.settings {
-            if let Some(incoming_map) = incoming_settings.as_object() {
-                debug!("Merging incoming nested settings for guild {}", guild_id);
-                for (key, value) in incoming_map {
-                    // Avoid overwriting emoji_reactions_enabled if it's explicitly set at top level
-                    if key != "emoji_reactions_enabled" {
-                         settings_map.insert(key.clone(), value.clone());
-                    }
-                }
-            } else {
-                warn!("Incoming settings for guild {} was not a JSON object, skipping merge.", guild_id);
-            }
-        }
-
-        // Update top-level settings within the JSON map *after* potential merge
-        // This ensures the explicit top-level values take precedence
-
-        // Update emoji reactions setting if provided
-        if let Some(enabled) = request.emoji_reactions_enabled {
-            settings_map.insert("emoji_reactions_enabled".to_string(), serde_json::json!(enabled));
-            debug!("Set emoji reactions in JSON for guild {}: {}", guild_id, enabled);
-        }
-
-        // Update URL rule setting if provided
-        if let Some(rule) = &request.url_rule {
-            settings_map.insert("url_rule".to_string(), serde_json::json!(rule));
-             debug!("Prepared URL rule update for guild {}: {}", guild_id, rule);
-        }
-
-        // --- Persist updated settings ---
-        // Ensure the row exists first (or create it with default settings)
-        // This avoids issues if the guild_settings row is somehow missing
-        client
-            .execute(
-                "INSERT INTO guild_settings (guild_id, settings)
-                 VALUES ($1, $2)
-                 ON CONFLICT (guild_id) DO NOTHING", // Just ensure the row exists
-                &[&guild_id, &serde_json::json!({})], // Insert empty settings if new
+        // --- Ensure the row exists first ---
+        // Use INSERT ... ON CONFLICT DO NOTHING to safely create the row if it doesn't exist.
+        tx.execute(
+                "INSERT INTO guild_settings (guild_id) VALUES ($1) ON CONFLICT (guild_id) DO NOTHING",
+                &[&guild_id],
             )
             .await?;
         debug!("Ensured guild_settings row exists for guild {}", guild_id);
 
-        // Now, update all fields using separate UPDATE statements
-        // Update the merged settings JSONB
-        client
-            .execute(
-                "UPDATE guild_settings SET settings = $2, updated_at = NOW() WHERE guild_id = $1",
-                &[&guild_id, &current_settings],
-            )
+        // --- Prepare fields to update ---
+        let mut updates: Vec<String> = Vec::new();
+        let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
+        params.push(&guild_id); // $1 is always guild_id
+
+        // Helper to add field update
+        let mut add_update = |field_name: &str, value: &(dyn tokio_postgres::types::ToSql + Sync)| {
+            updates.push(format!("{} = ${}", field_name, params.len() + 1));
+            params.push(value);
+        };
+
+        // Fetch current settings JSONB to merge updates
+        let current_settings_row = tx
+            .query_opt("SELECT settings FROM guild_settings WHERE guild_id = $1", &[&guild_id])
             .await?;
-        debug!("Updated settings JSONB for guild {}: {:?}", guild_id, &current_settings);
 
-        // Update other top-level fields individually if provided
+        let mut current_settings_json: JsonValue = current_settings_row
+            .and_then(|row| row.get::<_, Option<JsonValue>>(0)) // Get Option<JsonValue>
+            .unwrap_or_else(|| serde_json::json!({})); // Default to empty JSON object if NULL
+
+        // Ensure current_settings_json is a map
+        let settings_map = match current_settings_json.as_object_mut() {
+            Some(map) => map,
+            None => {
+                warn!("Guild {} settings column was not a JSON object. Resetting.", guild_id);
+                current_settings_json = serde_json::json!({});
+                current_settings_json.as_object_mut().unwrap() // Should be safe now
+            }
+        };
+
+        // Merge incoming nested settings
+        if let Some(incoming_settings) = &request.settings {
+             if let Some(incoming_map) = incoming_settings.as_object() {
+                 debug!("Merging incoming nested settings for guild {}", guild_id);
+                 for (key, value) in incoming_map {
+                     // Avoid overwriting specific top-level fields managed separately if needed
+                     if key != "emoji_reactions_enabled" && key != "url_rule" {
+                          settings_map.insert(key.clone(), value.clone());
+                     }
+                 }
+             } else {
+                 warn!("Incoming settings for guild {} was not a JSON object, skipping merge.", guild_id);
+             }
+         }
+
+        // Update specific fields within the JSON map if provided in the request
+        if let Some(enabled) = request.emoji_reactions_enabled {
+            settings_map.insert("emoji_reactions_enabled".to_string(), serde_json::json!(enabled));
+        }
+        if let Some(rule) = &request.url_rule {
+            settings_map.insert("url_rule".to_string(), serde_json::json!(rule));
+        } else {
+             // If url_rule is explicitly None in request, remove it? Or handle null?
+             // Current frontend sends null if empty, let's store null.
+             settings_map.insert("url_rule".to_string(), JsonValue::Null);
+        }
+        // Add the potentially modified settings JSONB to the update list
+        add_update("settings", &current_settings_json);
+
+
+        // Add other top-level fields if present in the request
         if let Some(prefix) = &request.prefix {
-            client
-                .execute(
-                    "UPDATE guild_settings SET prefix = $2, updated_at = NOW() WHERE guild_id = $1",
-                    &[&guild_id, prefix],
-                )
-                .await?;
-            debug!("Updated prefix for guild {} to '{}'", guild_id, prefix);
+            add_update("prefix", prefix);
         } else {
-             // Explicitly set to NULL if not provided in request? Or leave as is?
-             // Current logic leaves it as is if None. Let's maintain that.
+             // Handle explicit NULL setting for prefix if needed, e.g., if request sends null
+             // For now, assume None means "no change" unless explicitly handled
+             // add_update("prefix", &Option::<String>::None); // Example if you want to set NULL
         }
 
-        if let Some(mod_role_id) = request.mod_role_id {
-             client
-                .execute(
-                    "UPDATE guild_settings SET mod_role_id = $2, updated_at = NOW() WHERE guild_id = $1",
-                    &[&guild_id, &mod_role_id],
-                )
-                .await?;
-             debug!("Updated mod_role_id for guild {}", guild_id);
+        // Handle Option<i64> fields correctly for NULL
+        match request.mod_role_id {
+            Some(id) => add_update("mod_role_id", &id),
+            None => {
+                updates.push(format!("mod_role_id = ${}", params.len() + 1));
+                params.push(&Option::<i64>::None); // Explicitly push NULL
+            }
+        }
+         match request.admin_role_id {
+            Some(id) => add_update("admin_role_id", &id),
+            None => {
+                updates.push(format!("admin_role_id = ${}", params.len() + 1));
+                params.push(&Option::<i64>::None); // Explicitly push NULL
+            }
+        }
+
+        // Helper function to parse channel ID string to Option<i64>
+        let parse_channel_id = |id_str: &Option<String>, field_name: &str| -> Result<Option<i64>, Error> {
+            match id_str {
+                Some(s) if !s.is_empty() => s.parse::<i64>().map(Some).map_err(|_| {
+                    Error::Unknown(format!("Invalid {} format: {}", field_name, s))
+                }),
+                _ => Ok(None), // Treat empty string or None as NULL
+            }
+        };
+
+        // Add channel IDs
+        let level_up_id = parse_channel_id(&request.level_up_channel_id, "level_up_channel_id")?;
+        updates.push(format!("level_up_channel_id = ${}", params.len() + 1));
+        params.push(&level_up_id);
+
+        let warn_id = parse_channel_id(&request.warn_channel_id, "warn_channel_id")?;
+        updates.push(format!("warn_channel_id = ${}", params.len() + 1));
+        params.push(&warn_id);
+
+        let delete_log_id = parse_channel_id(&request.delete_log_channel_id, "delete_log_channel_id")?;
+        updates.push(format!("delete_log_channel_id = ${}", params.len() + 1));
+        params.push(&delete_log_id);
+
+        let reaction_log_id = parse_channel_id(&request.reaction_log_channel_id, "reaction_log_channel_id")?;
+        updates.push(format!("reaction_log_channel_id = ${}", params.len() + 1));
+        params.push(&reaction_log_id);
+
+
+        // --- Execute the dynamic UPDATE statement ---
+        if !updates.is_empty() {
+            updates.push("updated_at = NOW()".to_string()); // Always update timestamp
+            let update_query = format!(
+                "UPDATE guild_settings SET {} WHERE guild_id = $1",
+                updates.join(", ")
+            );
+            debug!("Executing update query: {} with params: {:?}", update_query, params.len());
+            tx.execute(&update_query, &params[..]).await?;
+            debug!("Successfully updated guild_settings for guild {}", guild_id);
         } else {
-            // Set to NULL if None?
-             client
-                .execute(
-                    "UPDATE guild_settings SET mod_role_id = NULL, updated_at = NOW() WHERE guild_id = $1",
-                    &[&guild_id],
-                )
-                .await?;
-             debug!("Set mod_role_id to NULL for guild {}", guild_id);
+            debug!("No fields to update for guild {}", guild_id);
         }
 
-        if let Some(admin_role_id) = request.admin_role_id {
-             client
-                .execute(
-                    "UPDATE guild_settings SET admin_role_id = $2, updated_at = NOW() WHERE guild_id = $1",
-                    &[&guild_id, &admin_role_id],
-                )
-                .await?;
-             debug!("Updated admin_role_id for guild {}", guild_id);
-        } else {
-             // Set to NULL if None?
-             client
-                .execute(
-                    "UPDATE guild_settings SET admin_role_id = NULL, updated_at = NOW() WHERE guild_id = $1",
-                    &[&guild_id],
-                )
-                .await?;
-             debug!("Set admin_role_id to NULL for guild {}", guild_id);
-        }
-
-
-        // --- Update Channel IDs in guild_channels table ---
-
-        // Update level up channel if provided
-        if let Some(channel_id_str) = &request.level_up_channel_id {
-            // Parse channel ID to ensure it's valid
-            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid level_up_channel_id format: {}", channel_id_str))
-            })?;
-
-            client
-                .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type)
-                    DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"level_up", &channel_id_i64], // Use the parsed i64
-                )
-                .await?;
-
-            debug!("Updated level_up channel for guild {} to {}", guild_id, channel_id_str);
-        }
-
-        // Update warn channel if provided
-        if let Some(channel_id_str) = &request.warn_channel_id {
-            // Parse channel ID to ensure it's valid
-            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid warn_channel_id format: {}", channel_id_str))
-            })?;
-
-            client
-                .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type)
-                    DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"warn", &channel_id_i64], // Use the parsed i64
-                )
-                .await?;
-
-            debug!("Updated warn channel for guild {} to {}", guild_id, channel_id_str);
-        }
-
-        // Update delete log channel if provided
-        if let Some(channel_id_str) = &request.delete_log_channel_id {
-            // Parse channel ID to ensure it's valid
-            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid delete_log_channel_id format: {}", channel_id_str))
-            })?;
-
-            client
-                .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type)
-                    DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"delete_log", &channel_id_i64], // Use the parsed i64
-                )
-                .await?;
-
-            debug!("Updated delete_log channel for guild {} to {}", guild_id, channel_id_str);
-        }
-
-        // Update reaction log channel if provided
-        if let Some(channel_id_str) = &request.reaction_log_channel_id {
-            // Parse channel ID to ensure it's valid
-            let channel_id_i64 = channel_id_str.parse::<i64>().map_err(|_| {
-                Error::Unknown(format!("Invalid reaction_log_channel_id format: {}", channel_id_str))
-            })?;
-
-            client
-                .execute(
-                    "INSERT INTO guild_channels (guild_id, channel_type, channel_id)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, channel_type)
-                    DO UPDATE SET channel_id = $3",
-                    &[&guild_id, &"reaction_log", &channel_id_i64], // Use the parsed i64
-                )
-                .await?;
-
-            debug!("Updated reaction_log channel for guild {} to {}", guild_id, channel_id_str);
-        }
-
+        tx.commit().await?; // Commit transaction
         info!("Successfully updated settings for guild {}", guild_id);
         Ok(())
     }
+
 
     /// Check if the bot is in a specific guild
     pub async fn is_bot_in_guild(&self, guild_id: i64) -> Result<bool, Error> {
@@ -342,11 +275,11 @@ impl GuildService {
         // The bot is considered to be in the guild if both conditions are true
         Ok(guild_exists && has_members)
     }
-    
+
     /// Get the member count for a specific guild
     pub async fn get_guild_member_count(&self, guild_id: i64) -> Result<i32, Error> {
         let client = self.db.get_client().await?;
-        
+
         // Use a simple count query with error handling
         match client
             .query_opt(
@@ -375,45 +308,45 @@ impl GuildService {
     /// Get all guilds where the bot is a member
     pub async fn get_guilds(&self) -> Result<Vec<Guild>, Error> {
         let client = self.db.get_client().await?;
-        
+
         // Query all guilds from the database where the bot is a member
         let rows = client
             .query(
-                "SELECT 
-                    g.guild_id, 
-                    g.name, 
+                "SELECT
+                    g.guild_id,
+                    g.name,
                     g.icon_hash,
                     g.owner_id
                 FROM guild_info g
                 WHERE EXISTS (
-                    SELECT 1 FROM guild_members 
-                    WHERE guild_id = g.guild_id 
+                    SELECT 1 FROM guild_members
+                    WHERE guild_id = g.guild_id
                     LIMIT 1
                 )
                 ORDER BY g.name",
                 &[],
             )
             .await?;
-        
+
         // Manually create the guild vector
         let mut guilds = Vec::new();
-        
+
         for row in rows.iter() {
             let guild_id = row.get::<_, i64>(0);
             let guild_name = row.get::<_, String>(1);
             let icon_hash = row.get::<_, Option<String>>(2);
             let owner_id = row.get::<_, Option<i64>>(3);
-            
+
             guilds.push(Guild {
                 id: guild_id.to_string(),
                 name: guild_name,
                 icon: icon_hash,
                 owner: owner_id.is_some(),
-                permissions: 0, // Default permissions 
+                permissions: 0, // Default permissions
                 bot_joined: true,
             });
         }
-        
+
         info!("Retrieved {} guilds where bot is a member", guilds.len());
         Ok(guilds)
     }
