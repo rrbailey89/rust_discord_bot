@@ -161,14 +161,14 @@ const SettingsForm: React.FC = () => {
   }, [guildDetails]);
 
 
-  // Initialize form state with defaults matching the NEW GuildSettingsType
+  // Initialize form state with defaults matching the NEW GuildSettingsType (using string IDs)
   // Use null for optional fields where appropriate
   const [isInitialLoad, setIsInitialLoad] = useState(true); // Flag for initial load
   const [formState, setFormState] = useState<Partial<GuildSettingsType>>({
-    guild_id: numericGuildId,
+    guild_id: guildId || '', // Use string guildId from params
     prefix: null,
-    mod_role_id: null,
-    admin_role_id: null,
+    mod_role_id: null, // Initialize as null (will become string | null)
+    admin_role_id: null, // Initialize as null (will become string | null)
     settings: { // Initialize nested settings object
       autoModeration: {
         enabled: false,
@@ -183,11 +183,11 @@ const SettingsForm: React.FC = () => {
       },
     },
     emoji_reactions_enabled: true, // Default to true as per backend logic
-    level_up_channel_id: null,
-    warn_channel_id: null,
+    level_up_channel_id: null, // Initialize as null (will become string | null)
+    warn_channel_id: null, // Initialize as null (will become string | null)
     url_rule: null,
-    delete_log_channel_id: null,
-    reaction_log_channel_id: null,
+    delete_log_channel_id: null, // Initialize as null (will become string | null)
+    reaction_log_channel_id: null, // Initialize as null (will become string | null)
     // Remove old/potentially conflicting fields if they are now handled within 'settings' or renamed
     // logChannelId: '', // Example: If this is now delete_log_channel_id, remove this line
     // moderationEnabled: true, // Example: If this concept is handled differently, remove/update
@@ -217,13 +217,13 @@ const SettingsForm: React.FC = () => {
             ...(fetchedSettings.settings?.welcomeMessage ?? {}),
           },
         },
-        // Ensure channel IDs are treated as numbers or null
+        // Ensure channel IDs are treated as strings or null
         level_up_channel_id: fetchedSettings.level_up_channel_id ?? null,
         warn_channel_id: fetchedSettings.warn_channel_id ?? null,
         delete_log_channel_id: fetchedSettings.delete_log_channel_id ?? null,
         reaction_log_channel_id: fetchedSettings.reaction_log_channel_id ?? null,
       }));
-      console.log("Fetched settings applied (initial load):", fetchedSettings); // Log fetched settings
+      console.log("Fetched settings applied (initial load):", fetchedSettings);
       setIsInitialLoad(false); // Mark initial load as complete
     } else if (!fetchedSettings) {
         console.log("useEffect [fetchedSettings]: No fetchedSettings data yet."); // Log for else case
@@ -278,8 +278,9 @@ const SettingsForm: React.FC = () => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : undefined;
-    console.log(`handleChange - name: ${name}, type: ${type}, checked: ${checked}, value: ${value}`); // Log change details
-    const isNumberInput = ['mod_role_id', 'admin_role_id', 'level_up_channel_id', 'warn_channel_id', 'delete_log_channel_id', 'reaction_log_channel_id'].includes(name) || name.endsWith('channelId'); // Add other numeric fields if any
+    console.log(`handleChange - name: ${name}, type: ${type}, checked: ${checked}, value: ${value}`);
+    // Identify ID fields that should remain strings
+    const isIdField = ['guild_id', 'mod_role_id', 'admin_role_id', 'level_up_channel_id', 'warn_channel_id', 'delete_log_channel_id', 'reaction_log_channel_id'].includes(name) || name.endsWith('channelId');
 
     // Function to update nested state within the 'settings' object
     const updateNestedSetting = (keys: string[], val: any) => {
@@ -308,15 +309,18 @@ const SettingsForm: React.FC = () => {
 
     } else {
       // Handle top-level properties
-      let finalValue: any = value; // Default to string value
+      let finalValue: any;
       if (type === 'checkbox') {
         finalValue = checked;
-      } else if (isNumberInput) {
-        // Explicitly handle number conversion for top-level channel IDs and role IDs
-        finalValue = value === '' ? null : Number(value);
+      } else if (isIdField) {
+        // Keep ID fields as strings, use null if empty string
+        finalValue = value === '' ? null : value;
+      } else {
+        // Handle other types (e.g., prefix, url_rule) - keep as string or handle specific types if needed
+        finalValue = value;
       }
 
-      // Update state using a functional update to ensure re-render
+      // Update state using a functional update
       setFormState(prevState => {
         console.log(`handleChange: State *before* update for ${name}:`, prevState);
         const newState = {
@@ -408,7 +412,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="level_up_channel_id"
                name="level_up_channel_id"
-               value={formState.level_up_channel_id === null ? '' : String(formState.level_up_channel_id)} // Explicit string conversion from state
+               value={formState.level_up_channel_id ?? ''} // Use string value directly
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -424,7 +428,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="warn_channel_id"
                name="warn_channel_id"
-               value={formState.warn_channel_id === null ? '' : String(formState.warn_channel_id)} // Explicit string conversion from state
+               value={formState.warn_channel_id ?? ''} // Use string value directly
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -440,7 +444,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="delete_log_channel_id"
                name="delete_log_channel_id"
-               value={formState.delete_log_channel_id === null ? '' : String(formState.delete_log_channel_id)} // Explicit string conversion from state
+               value={formState.delete_log_channel_id ?? ''} // Use string value directly
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -456,7 +460,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="reaction_log_channel_id"
                name="reaction_log_channel_id"
-               value={formState.reaction_log_channel_id === null ? '' : String(formState.reaction_log_channel_id)} // Explicit string conversion from state
+               value={formState.reaction_log_channel_id ?? ''} // Use string value directly
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -547,7 +551,7 @@ const SettingsForm: React.FC = () => {
             <Select
               id="settings.welcomeMessage.channelId"
               name="settings.welcomeMessage.channelId" // Updated name
-              value={formState.settings?.welcomeMessage?.channelId === null ? '' : String(formState.settings?.welcomeMessage?.channelId)} // Explicit string conversion from state
+              value={formState.settings?.welcomeMessage?.channelId ?? ''} // Use string value directly
               onChange={handleChange}
               disabled={!(formState.settings?.welcomeMessage?.enabled ?? false)}
             >

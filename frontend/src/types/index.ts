@@ -62,12 +62,12 @@ export interface WordDetectionRule {
   updated_at: string;
 }
 
-// Settings types - Updated to match backend structure
+// Settings types - Updated to match backend structure and use string IDs
 export interface GuildSettings {
-  guild_id: number; // Changed from string? to number
-  prefix?: string | null; // Changed to optional string or null
-  mod_role_id?: number | null; // Changed to optional number or null
-  admin_role_id?: number | null; // Changed to optional number or null
+  guild_id: string; // Use string for consistency
+  prefix?: string | null;
+  mod_role_id?: string | null; // Use string | null
+  admin_role_id?: string | null; // Use string | null
   settings?: { // Nested settings object
     autoModeration?: { // Optional nested structure
       enabled?: boolean;
@@ -77,18 +77,18 @@ export interface GuildSettings {
     };
     welcomeMessage?: { // Optional nested structure
       enabled?: boolean;
-      channelId?: number | null; // Changed to optional number or null
+      channelId?: string | null; // Use string | null
       message?: string;
     };
     // Add other potential nested settings here if needed
     [key: string]: any; // Allow other arbitrary settings
   } | null;
-  emoji_reactions_enabled?: boolean | null; // Added new field
-  level_up_channel_id?: number | null; // Added new field, type number
-  warn_channel_id?: number | null; // Added new field, type number
-  url_rule?: string | null; // Added new field
-  delete_log_channel_id?: number | null; // Added new field, type number
-  reaction_log_channel_id?: number | null; // Added new field, type number
+  emoji_reactions_enabled?: boolean | null;
+  level_up_channel_id?: string | null; // Use string | null
+  warn_channel_id?: string | null; // Use string | null
+  url_rule?: string | null;
+  delete_log_channel_id?: string | null; // Use string | null
+  reaction_log_channel_id?: string | null; // Use string | null
 
   // Frontend-specific state (might need adjustment based on how backend sends data)
   logChannelId?: string; // Kept for now, might need removal/update
