@@ -125,28 +125,34 @@ impl GuildService {
             }
         };
 
+        // Merge incoming nested settings first (if provided)
+        if let Some(incoming_settings) = &request.settings {
+            if let Some(incoming_map) = incoming_settings.as_object() {
+                debug!("Merging incoming nested settings for guild {}", guild_id);
+                for (key, value) in incoming_map {
+                    // Avoid overwriting emoji_reactions_enabled if it's explicitly set at top level
+                    if key != "emoji_reactions_enabled" {
+                         settings_map.insert(key.clone(), value.clone());
+                    }
+                }
+            } else {
+                warn!("Incoming settings for guild {} was not a JSON object, skipping merge.", guild_id);
+            }
+        }
+
+        // Update top-level settings within the JSON map *after* potential merge
+        // This ensures the explicit top-level values take precedence
+
         // Update emoji reactions setting if provided
         if let Some(enabled) = request.emoji_reactions_enabled {
             settings_map.insert("emoji_reactions_enabled".to_string(), serde_json::json!(enabled));
-            debug!("Prepared emoji reactions update for guild {}: {}", guild_id, enabled);
+            debug!("Set emoji reactions in JSON for guild {}: {}", guild_id, enabled);
         }
 
         // Update URL rule setting if provided
         if let Some(rule) = &request.url_rule {
             settings_map.insert("url_rule".to_string(), serde_json::json!(rule));
              debug!("Prepared URL rule update for guild {}: {}", guild_id, rule);
-        }
-
-        // Merge incoming nested settings if provided
-        if let Some(incoming_settings) = &request.settings {
-            if let Some(incoming_map) = incoming_settings.as_object() {
-                debug!("Merging incoming nested settings for guild {}", guild_id);
-                for (key, value) in incoming_map {
-                    settings_map.insert(key.clone(), value.clone());
-                }
-            } else {
-                warn!("Incoming settings for guild {} was not a JSON object, skipping merge.", guild_id);
-            }
         }
 
         // --- Persist updated settings JSONB and top-level fields ---
