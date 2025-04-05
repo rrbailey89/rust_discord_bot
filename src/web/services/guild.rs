@@ -26,10 +26,14 @@ impl GuildService {
         let client = self.db.get_client().await?;
 
         // Query relevant settings from guild_settings and guild_channels
+        // Query relevant settings from guild_settings and join/subquery guild_channels
         let row_opt = client
-            .query_opt( // Use query_opt to handle missing guild settings gracefully
+            .query_opt(
                 "SELECT
-                    gs.settings, -- Fetch the entire JSONB settings object
+                    gs.prefix,                     -- Fetch prefix
+                    gs.mod_role_id,                -- Fetch mod_role_id
+                    gs.admin_role_id,              -- Fetch admin_role_id
+                    gs.settings,                   -- Fetch the entire JSONB settings object
                     (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'level_up') as level_up_channel_id,
                     (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'warn') as warn_channel_id,
                     (SELECT channel_id FROM guild_channels WHERE guild_id = $1 AND channel_type = 'delete_log') as delete_log_channel_id,
@@ -41,21 +45,22 @@ impl GuildService {
             .await?; // Propagate other DB errors
 
         // Extract data if row exists, otherwise use defaults
-        let (settings_json, lvl_chan, warn_chan, del_log_chan, react_log_chan) = match row_opt {
+        let (prefix, mod_role, admin_role, settings_json, lvl_chan, warn_chan, del_log_chan, react_log_chan) = match row_opt {
             Some(row) => {
-                let json_val = row.get::<_, Option<JsonValue>>(0).unwrap_or_else(|| serde_json::json!({}));
-                // Read channel IDs as Option<i64>
-                let lvl = row.get::<_, Option<i64>>(1);
-                let warn_ch = row.get::<_, Option<i64>>(2);
-                let del_log = row.get::<_, Option<i64>>(3);
-                let react_log = row.get::<_, Option<i64>>(4);
-                // Return the variables with the correct Option<i64> type
-                (json_val, lvl, warn_ch, del_log, react_log)
+                let pfx = row.get::<_, Option<String>>(0);
+                let mod_r = row.get::<_, Option<i64>>(1);
+                let admin_r = row.get::<_, Option<i64>>(2);
+                let json_val = row.get::<_, Option<JsonValue>>(3).unwrap_or_else(|| serde_json::json!({}));
+                let lvl = row.get::<_, Option<i64>>(4);
+                let warn_ch = row.get::<_, Option<i64>>(5);
+                let del_log = row.get::<_, Option<i64>>(6);
+                let react_log = row.get::<_, Option<i64>>(7);
+                (pfx, mod_r, admin_r, json_val, lvl, warn_ch, del_log, react_log)
             },
             None => {
                 // Guild not found in guild_settings, return defaults
                 debug!("No settings found for guild_id {}. Returning defaults.", guild_id);
-                (serde_json::json!({}), None, None, None, None)
+                (None, None, None, serde_json::json!({}), None, None, None, None)
             }
         };
 
@@ -74,12 +79,12 @@ impl GuildService {
         // Map the result to a GuildSettings object
         let guild_settings_result = GuildSettings {
             guild_id,
-            prefix: None, // Assuming these are not in the 'settings' JSONB yet
-            mod_role_id: None,
-            admin_role_id: None,
+            prefix, // Use fetched value
+            mod_role_id: mod_role, // Use fetched value
+            admin_role_id: admin_role, // Use fetched value
             settings: Some(settings_json), // Store the raw JSONB
             emoji_reactions_enabled: Some(emoji_reactions_enabled), // Use extracted value
-            // Assign the correctly typed variables
+            // Assign the correctly typed channel variables
             level_up_channel_id: lvl_chan,
             warn_channel_id: warn_chan,
             url_rule, // Use extracted value from JSONB
