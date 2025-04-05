@@ -77,16 +77,16 @@ pub struct GuildSettings {
     pub settings: Option<serde_json::Value>,
     /// Whether emoji reactions are enabled
     pub emoji_reactions_enabled: Option<bool>,
-    /// Channel ID for level up notifications
-    pub level_up_channel_id: Option<i64>, // Changed to i64
-    /// Channel ID for warning notifications
-    pub warn_channel_id: Option<i64>, // Changed to i64
+    /// Channel ID for level up notifications (Stored as BIGINT, represented as String in API)
+    pub level_up_channel_id: Option<String>,
+    /// Channel ID for warning notifications (Stored as BIGINT, represented as String in API)
+    pub warn_channel_id: Option<String>,
     /// URL rule setting for the guild
     pub url_rule: Option<String>,
-    /// Channel ID for delete log
-    pub delete_log_channel_id: Option<i64>, // Changed to i64
-    /// Channel ID for reaction log
-    pub reaction_log_channel_id: Option<i64>, // Changed to i64
+    /// Channel ID for delete log (Stored as BIGINT, represented as String in API)
+    pub delete_log_channel_id: Option<String>,
+    /// Channel ID for reaction log (Stored as BIGINT, represented as String in API)
+    pub reaction_log_channel_id: Option<String>,
 }
 
 /// Request to update guild settings

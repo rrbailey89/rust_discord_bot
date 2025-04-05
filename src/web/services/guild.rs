@@ -80,11 +80,12 @@ impl GuildService {
             admin_role_id: admin_role,
             settings: Some(settings_json),
             emoji_reactions_enabled: Some(emoji_reactions_enabled),
-            level_up_channel_id: lvl_chan,
-            warn_channel_id: warn_chan,
+            // Convert Option<i64> to Option<String> for API consistency
+            level_up_channel_id: lvl_chan.map(|id| id.to_string()),
+            warn_channel_id: warn_chan.map(|id| id.to_string()),
             url_rule,
-            delete_log_channel_id: del_log_chan,
-            reaction_log_channel_id: react_log_chan,
+            delete_log_channel_id: del_log_chan.map(|id| id.to_string()),
+            reaction_log_channel_id: react_log_chan.map(|id| id.to_string()),
         };
 
         Ok(guild_settings_result)
