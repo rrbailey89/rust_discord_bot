@@ -635,10 +635,13 @@ fn get_dynamic_prefix(ctx: PartialContext<'_, Data, Error>) -> BoxFuture<'_, Res
         // Only guilds can have custom prefixes
         let guild_id = match ctx.guild_id { // Access field directly
             Some(id) => id.get() as i64,
-        None => return Ok(None), // No prefix in DMs
+        None => {
+            // debug!("Message not in a guild, no dynamic prefix."); // Optional: Log DM case
+            return Ok(None); // No prefix in DMs
+        }
     };
 
-    debug!("Fetching prefix for guild_id: {}", guild_id);
+    debug!("get_dynamic_prefix: Checking prefix for guild_id: {}", guild_id); // More specific log
 
     // Access the database service from the shared Data
     let db = &ctx.data.database;
@@ -666,6 +669,8 @@ fn get_dynamic_prefix(ctx: PartialContext<'_, Data, Error>) -> BoxFuture<'_, Res
             debug!("No settings row found for guild_id: {}", guild_id);
             Ok(None) // No settings row means no custom prefix
             }
-        }
+        };
+        debug!("get_dynamic_prefix: Returning prefix result for guild {}: {:?}", guild_id, result); // Log the result
+        result
     }) // Close Box::pin
 }
