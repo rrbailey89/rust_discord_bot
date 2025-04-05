@@ -316,13 +316,14 @@ const SettingsForm: React.FC = () => {
         finalValue = value === '' ? null : Number(value);
       }
 
-      setFormState(prev => {
-        console.log(`handleChange: State *before* update for ${name}:`, prev); // Log state BEFORE update
+      // Update state using a functional update to ensure re-render
+      setFormState(prevState => {
+        console.log(`handleChange: State *before* update for ${name}:`, prevState);
         const newState = {
-          ...prev,
+          ...prevState,
           [name]: finalValue,
         };
-        console.log(`handleChange: State *after* update for ${name}:`, newState); // Log state AFTER update
+        console.log(`handleChange: State *after* update for ${name}:`, newState);
         return newState;
       });
     }

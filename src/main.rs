@@ -15,14 +15,14 @@ use crate::services::{LoggingService, MetricsService};
 use crate::services::cache::CacheService;
 use crate::error::Error;
 use poise::{serenity_prelude as serenity, PartialContext, BoxFuture}; // Added PartialContext and BoxFuture
-use poise::serenity_prelude::{ChannelId, CreateMessage, OnlineStatus, ActivityData, Command as SerenityCommand}; // Added SerenityCommand
+use poise::serenity_prelude::{ChannelId, CreateMessage, Command as SerenityCommand}; // Added SerenityCommand
 use serenity::GatewayIntents;
 use std::sync::Arc;
-use tokio::time::{Duration, sleep};
+use tokio::time::Duration;
 use tracing::{info, warn, error, debug};
 use crate::types::ShardManagerContainer;
 use crate::types::DataContainer;
-use rand::{Rng, thread_rng}; // Use thread_rng directly
+ // Use thread_rng directly
 use std::time::Instant;
 use std::path::Path;
 use crate::web::services::AnalyticsService;

@@ -15,7 +15,7 @@ use serde_json::Value;
 use dashmap::DashMap;
 use futures::future::BoxFuture;
 use std::path::Path;
-use poise::serenity_prelude::{Member, RoleId}; // Added Member, RoleId
+use poise::serenity_prelude::Member; // Added Member, RoleId
 
 /// Health check status for the database connection pool
 #[derive(Debug, Clone)]

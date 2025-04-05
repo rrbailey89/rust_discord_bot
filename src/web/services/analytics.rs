@@ -9,8 +9,8 @@ use crate::web::models::analytics::{
     UserActivitySummary, GuildActivity, LogEventRequest, AnalyticsQueryParams,
     CommandTimeSeriesPoint, UserTimeSeriesPoint // Added new granular types
 };
-use chrono::{DateTime, Utc, Duration, NaiveDate};
-use tracing::{info, error, warn}; // Added warn
+use chrono::{DateTime, Utc, Duration};
+use tracing::info; // Added warn
 use serde_json::Value;
 use tokio_postgres::types::ToSql;
 

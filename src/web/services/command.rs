@@ -7,7 +7,7 @@ use crate::services::database::DatabaseService;
 use tracing::{debug, info, warn, error};
 use crate::web::models::command::{
     CommandInfo, CommandDetails, CommandSettings, UpdateCommandSettingsRequest,
-    ConfigSchema, ConfigOption, EnumValue
+    ConfigSchema, ConfigOption
 };
 use serde_json::Value;
 

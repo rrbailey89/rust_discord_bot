@@ -13,8 +13,8 @@ use crate::DataContainer;
 use crate::web::services::AnalyticsService; // Added
 use crate::web::models::analytics::LogEventRequest; // Added
 use std::collections::HashMap; // Added
-use tracing::{error, warn, info, debug}; // Added info, debug
-use poise::serenity_prelude::{Ready, OnlineStatus, ActivityData}; // Added Ready, OnlineStatus, ActivityData
+use tracing::{error, info, debug}; // Added info, debug
+use poise::serenity_prelude::{OnlineStatus, ActivityData}; // Added Ready, OnlineStatus, ActivityData
 use std::sync::Arc; // Added Arc
 use tokio::time::{sleep, Duration}; // Added sleep, Duration
 use rand::{Rng, rng}; // Updated to use rng instead of thread_rng
