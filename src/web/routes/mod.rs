@@ -8,6 +8,7 @@ pub mod word_detection;
 pub mod settings;
 pub mod analytics;
 pub mod users;
+pub mod config; // Add config module
 
 use actix_web::web;
 use actix_web::web::ServiceConfig;

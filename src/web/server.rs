@@ -11,6 +11,7 @@ use actix_web::{
     web::{self, Data as WebData},
     App, HttpResponse, HttpServer, Responder, middleware::Logger,
 };
+use std::env; // Import env for reading environment variables if needed directly here
 use std::net::TcpListener;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -95,6 +96,7 @@ pub async fn start_server(bot_data: Arc<Data>, port: u16) -> Result<(), crate::e
                     .configure(routes::settings::configure)
                     .configure(routes::analytics::configure)
                     .configure(routes::users::configure)
+                    .configure(routes::config::configure) // Add config routes
             )
             )
             

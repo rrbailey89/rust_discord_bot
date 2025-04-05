@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Import useEffect
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { useQuery } from '@tanstack/react-query';
@@ -100,10 +100,37 @@ const fetchGuilds = async (): Promise<Guild[]> => {
   return response.data;
 };
 
+// Define type for the client ID response
+interface ClientIdResponse {
+  clientId: string;
+}
+
+// Function to fetch client ID
+const fetchClientId = async (): Promise<ClientIdResponse> => {
+  const response = await api.get('/config/client-id');
+  return response.data;
+};
+
 const GuildList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [clientId, setClientId] = useState<string | null>(null); // State for client ID
   const navigate = useNavigate();
-  
+
+  // Fetch Client ID
+  const { data: clientIdData, isError: isClientIdError, error: clientIdError } = useQuery<ClientIdResponse, Error>({
+    queryKey: ['clientId'],
+    queryFn: fetchClientId,
+    staleTime: Infinity, // Client ID rarely changes, cache indefinitely
+    gcTime: Infinity, // Use gcTime instead of cacheTime
+  });
+
+  // Update state when client ID is fetched
+  useEffect(() => {
+    if (clientIdData) {
+      setClientId(clientIdData.clientId);
+    }
+  }, [clientIdData]);
+
   // Fetch guilds data
   const { data: guilds, isLoading, isError, error, refetch } = useQuery<Guild[], Error>({
     queryKey: ['guilds'],
@@ -138,18 +165,17 @@ const GuildList: React.FC = () => {
 
   // Handler to redirect user to Discord OAuth flow
   const handleAddBot = (guildId: string) => {
-    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
     const permissions = '564584457432311'; // Use the specified permissions integer
     if (!clientId) {
-      console.error('VITE_DISCORD_CLIENT_ID is not set in environment variables.');
-      // Optionally show an error message to the user
+      console.error('Client ID not loaded yet.');
+      // Optionally show an error message to the user or disable the button
       return;
     }
     const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&guild_id=${guildId}&permissions=${permissions}&scope=bot%20applications.commands`;
     window.location.href = inviteUrl;
   };
 
-  // Render loading state
+  // Render loading state (consider loading client ID too)
   if (isLoading) {
     return (
       <LoadingContainer>
@@ -158,14 +184,22 @@ const GuildList: React.FC = () => {
     );
   }
 
-  // Render error state
-  if (isError) {
+  // Render error state (handle both guild and client ID errors)
+  if (isError || isClientIdError) {
+    const guildErrorMessage = isError ? (error?.message || 'Failed to load guilds') : null;
+    const clientIdErrorMessage = isClientIdError ? (clientIdError?.message || 'Failed to load configuration') : null;
+    const combinedMessage = [guildErrorMessage, clientIdErrorMessage].filter(Boolean).join('; ');
+
     return (
       <Container>
         <ErrorContainer>
-          <ErrorMessage>Failed to load guilds</ErrorMessage>
-          <div>{error?.message || 'An unknown error occurred'}</div>
-          <RetryButton onClick={() => refetch()}>Retry</RetryButton>
+          <ErrorMessage>Error loading page data</ErrorMessage>
+          <div>{combinedMessage}</div>
+          {/* Allow retrying both fetches if needed, or handle separately */}
+          <RetryButton onClick={() => {
+            if (isError) refetch();
+            // Add refetch for clientId if useQuery supports it or handle differently
+          }}>Retry</RetryButton>
         </ErrorContainer>
       </Container>
     );
