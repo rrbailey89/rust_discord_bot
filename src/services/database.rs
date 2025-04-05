@@ -364,6 +364,20 @@ impl DatabaseService {
         Ok(row.map(|r| r.get(0)))
     }
 
+    /// Fetches the warn channel ID from the guild_settings table
+    pub async fn fetch_guild_warn_channel(&self, guild_id: i64) -> Result<Option<i64>, Error> {
+        let client = self.pool.get().await?;
+        let row = client
+            .query_opt(
+                "SELECT warn_channel_id FROM guild_settings WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await?;
+
+        // The column might be null in the DB, map the Option<i64> from the row directly.
+        Ok(row.and_then(|r| r.get(0)))
+    }
+
     pub async fn store_warn_channel(&self, guild_id: i64, channel_id: i64) -> Result<(), Error> {
         let client = self.pool.get().await?;
         client
