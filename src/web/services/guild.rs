@@ -155,47 +155,79 @@ impl GuildService {
              debug!("Prepared URL rule update for guild {}: {}", guild_id, rule);
         }
 
-        // --- Persist updated settings JSONB and top-level fields ---
-        // Use INSERT ... ON CONFLICT for initial row creation or updating settings JSONB
-        // We handle other top-level fields separately for clarity
+        // --- Persist updated settings ---
+        // Ensure the row exists first (or create it with default settings)
+        // This avoids issues if the guild_settings row is somehow missing
         client
             .execute(
                 "INSERT INTO guild_settings (guild_id, settings)
                  VALUES ($1, $2)
-                 ON CONFLICT (guild_id) DO UPDATE
-                 SET settings = $2", // Update the entire settings object
-                &[&guild_id, &current_settings], // Use the potentially merged current_settings
+                 ON CONFLICT (guild_id) DO NOTHING", // Just ensure the row exists
+                &[&guild_id, &serde_json::json!({})], // Insert empty settings if new
             )
             .await?;
-        debug!("Persisted updated settings JSONB for guild {}: {:?}", guild_id, &current_settings); // Log the JSON being saved
+        debug!("Ensured guild_settings row exists for guild {}", guild_id);
 
-        // Update top-level fields individually if provided
+        // Now, update all fields using separate UPDATE statements
+        // Update the merged settings JSONB
+        client
+            .execute(
+                "UPDATE guild_settings SET settings = $2, updated_at = NOW() WHERE guild_id = $1",
+                &[&guild_id, &current_settings],
+            )
+            .await?;
+        debug!("Updated settings JSONB for guild {}: {:?}", guild_id, &current_settings);
+
+        // Update other top-level fields individually if provided
         if let Some(prefix) = &request.prefix {
             client
                 .execute(
-                    "UPDATE guild_settings SET prefix = $2 WHERE guild_id = $1",
+                    "UPDATE guild_settings SET prefix = $2, updated_at = NOW() WHERE guild_id = $1",
                     &[&guild_id, prefix],
                 )
                 .await?;
             debug!("Updated prefix for guild {} to '{}'", guild_id, prefix);
+        } else {
+             // Explicitly set to NULL if not provided in request? Or leave as is?
+             // Current logic leaves it as is if None. Let's maintain that.
         }
+
         if let Some(mod_role_id) = request.mod_role_id {
              client
                 .execute(
-                    "UPDATE guild_settings SET mod_role_id = $2 WHERE guild_id = $1",
+                    "UPDATE guild_settings SET mod_role_id = $2, updated_at = NOW() WHERE guild_id = $1",
                     &[&guild_id, &mod_role_id],
                 )
                 .await?;
              debug!("Updated mod_role_id for guild {}", guild_id);
+        } else {
+            // Set to NULL if None?
+             client
+                .execute(
+                    "UPDATE guild_settings SET mod_role_id = NULL, updated_at = NOW() WHERE guild_id = $1",
+                    &[&guild_id],
+                )
+                .await?;
+             debug!("Set mod_role_id to NULL for guild {}", guild_id);
         }
+
         if let Some(admin_role_id) = request.admin_role_id {
              client
                 .execute(
-                    "UPDATE guild_settings SET admin_role_id = $2 WHERE guild_id = $1",
+                    "UPDATE guild_settings SET admin_role_id = $2, updated_at = NOW() WHERE guild_id = $1",
                     &[&guild_id, &admin_role_id],
                 )
                 .await?;
              debug!("Updated admin_role_id for guild {}", guild_id);
+        } else {
+             // Set to NULL if None?
+             client
+                .execute(
+                    "UPDATE guild_settings SET admin_role_id = NULL, updated_at = NOW() WHERE guild_id = $1",
+                    &[&guild_id],
+                )
+                .await?;
+             debug!("Set admin_role_id to NULL for guild {}", guild_id);
         }
 
 

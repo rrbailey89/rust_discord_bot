@@ -163,6 +163,7 @@ const SettingsForm: React.FC = () => {
 
   // Initialize form state with defaults matching the NEW GuildSettingsType
   // Use null for optional fields where appropriate
+  const [isInitialLoad, setIsInitialLoad] = useState(true); // Flag for initial load
   const [formState, setFormState] = useState<Partial<GuildSettingsType>>({
     guild_id: numericGuildId,
     prefix: null,
@@ -194,7 +195,10 @@ const SettingsForm: React.FC = () => {
 
   // Update form state when settings are loaded/refetched
   useEffect(() => {
-    if (fetchedSettings) {
+    console.log("useEffect [fetchedSettings] running...", { isInitialLoad, fetchedSettings }); // Add log
+    // Only apply fetched settings on initial load or if fetchedSettings becomes available
+    if (fetchedSettings && isInitialLoad) {
+      console.log("Applying fetched settings to form state (initial load)..."); // Add log
       // Merge fetched settings into the state, preserving defaults for missing fields
       setFormState(prev => ({
         ...prev, // Keep existing state (like guild_id)
@@ -219,9 +223,14 @@ const SettingsForm: React.FC = () => {
         delete_log_channel_id: fetchedSettings.delete_log_channel_id ?? null,
         reaction_log_channel_id: fetchedSettings.reaction_log_channel_id ?? null,
       }));
-      console.log("Fetched settings:", fetchedSettings); // Log fetched settings
+      console.log("Fetched settings applied (initial load):", fetchedSettings); // Log fetched settings
+      setIsInitialLoad(false); // Mark initial load as complete
+    } else if (!fetchedSettings) {
+        console.log("useEffect [fetchedSettings]: No fetchedSettings data yet."); // Log for else case
+    } else if (!isInitialLoad) {
+        console.log("useEffect [fetchedSettings]: Skipping state update, not initial load."); // Log skip
     }
-  }, [fetchedSettings]);
+  }, [fetchedSettings, isInitialLoad]); // Add isInitialLoad to dependency array
 
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -308,11 +317,12 @@ const SettingsForm: React.FC = () => {
       }
 
       setFormState(prev => {
+        console.log(`handleChange: State *before* update for ${name}:`, prev); // Log state BEFORE update
         const newState = {
           ...prev,
           [name]: finalValue,
         };
-        console.log(`State updated for ${name}:`, newState); // Log state right after update
+        console.log(`handleChange: State *after* update for ${name}:`, newState); // Log state AFTER update
         return newState;
       });
     }
