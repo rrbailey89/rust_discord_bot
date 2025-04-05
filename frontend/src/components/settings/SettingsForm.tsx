@@ -298,9 +298,17 @@ const SettingsForm: React.FC = () => {
 
     } else {
       // Handle top-level properties
+      let finalValue: any = value; // Default to string value
+      if (type === 'checkbox') {
+        finalValue = checked;
+      } else if (isNumberInput) {
+        // Explicitly handle number conversion for top-level channel IDs and role IDs
+        finalValue = value === '' ? null : Number(value);
+      }
+
       setFormState(prev => ({
         ...prev,
-        [name]: type === 'checkbox' ? checked : (isNumberInput ? (value === '' ? null : Number(value)) : value),
+        [name]: finalValue,
       }));
     }
   };
