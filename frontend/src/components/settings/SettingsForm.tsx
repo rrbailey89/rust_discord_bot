@@ -397,7 +397,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="level_up_channel_id"
                name="level_up_channel_id"
-               value={formState.level_up_channel_id?.toString() ?? ''} // Ensure value matches option value (string or '')
+               value={formState.level_up_channel_id === null ? '' : String(formState.level_up_channel_id)} // Explicit string conversion from state
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -413,7 +413,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="warn_channel_id"
                name="warn_channel_id"
-               value={formState.warn_channel_id?.toString() ?? ''}
+               value={formState.warn_channel_id === null ? '' : String(formState.warn_channel_id)} // Explicit string conversion from state
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -429,7 +429,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="delete_log_channel_id"
                name="delete_log_channel_id"
-               value={formState.delete_log_channel_id?.toString() ?? ''}
+               value={formState.delete_log_channel_id === null ? '' : String(formState.delete_log_channel_id)} // Explicit string conversion from state
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -445,7 +445,7 @@ const SettingsForm: React.FC = () => {
              <Select
                id="reaction_log_channel_id"
                name="reaction_log_channel_id"
-               value={formState.reaction_log_channel_id?.toString() ?? ''}
+               value={formState.reaction_log_channel_id === null ? '' : String(formState.reaction_log_channel_id)} // Explicit string conversion from state
                onChange={handleChange}
              >
                <option value="">None</option>
@@ -536,7 +536,7 @@ const SettingsForm: React.FC = () => {
             <Select
               id="settings.welcomeMessage.channelId"
               name="settings.welcomeMessage.channelId" // Updated name
-              value={formState.settings?.welcomeMessage?.channelId?.toString() ?? ''} // Ensure value matches option value
+              value={formState.settings?.welcomeMessage?.channelId === null ? '' : String(formState.settings?.welcomeMessage?.channelId)} // Explicit string conversion from state
               onChange={handleChange}
               disabled={!(formState.settings?.welcomeMessage?.enabled ?? false)}
             >
