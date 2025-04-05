@@ -65,8 +65,8 @@ pub struct ChannelInfo {
 /// Guild settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuildSettings {
-    /// Guild ID
-    pub guild_id: i64,
+    /// Guild ID (Represented as String in API to avoid JS precision loss)
+    pub guild_id: String,
     /// Custom command prefix for this guild
     pub prefix: Option<String>,
     /// Moderator role ID

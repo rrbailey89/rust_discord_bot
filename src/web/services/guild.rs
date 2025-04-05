@@ -74,7 +74,7 @@ impl GuildService {
             .map(String::from);
 
         let guild_settings_result = GuildSettings {
-            guild_id,
+            guild_id: guild_id.to_string(), // Convert i64 parameter to String for the struct field
             prefix,
             mod_role_id: mod_role,
             admin_role_id: admin_role,

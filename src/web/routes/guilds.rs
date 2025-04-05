@@ -477,7 +477,7 @@ async fn get_guild_settings(
                 
                 // Return empty default settings with all required fields
                 let default_settings = crate::web::models::guild::GuildSettings {
-                    guild_id: guild_id_i64,
+                    guild_id: guild_id_i64.to_string(), // Convert i64 to String
                     prefix: None,
                     mod_role_id: None,
                     admin_role_id: None,
