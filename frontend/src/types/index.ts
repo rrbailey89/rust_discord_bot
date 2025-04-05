@@ -22,6 +22,16 @@ export interface Guild {
   memberCount?: number;
   commandsEnabled?: number;
   wordRules?: number;
+  channels?: ChannelInfo[]; // Add channels array
+}
+
+// Channel Info Type
+export interface ChannelInfo {
+  id: string;
+  name: string;
+  channel_type: number; // 0 = text, 2 = voice, etc.
+  position: number;
+  topic?: string | null;
 }
 
 // Authentication related types

@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react'; // Added useEffect
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import styled from 'styled-components';
-import { fetchGuildSettings, updateGuildSettings } from '../../services/api';
-// Use the updated GuildSettings type
-import { GuildSettings as GuildSettingsType } from '../../types';
+// Import fetchGuildDetails and necessary types
+import { fetchGuildSettings, updateGuildSettings, fetchGuildDetails } from '../../services/api';
+import { GuildSettings as GuildSettingsType, Guild, ChannelInfo } from '../../types';
 
 const SettingsContainer = styled.div`
   background-color: #2f3136;
@@ -146,6 +146,20 @@ const SettingsForm: React.FC = () => {
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
   });
+
+  // Fetch guild details (including channels)
+  const { data: guildDetails } = useQuery<Guild, Error>({ // Use Guild type here
+    queryKey: ['guildDetails', guildId],
+    queryFn: () => fetchGuildDetails(guildId!),
+    enabled: !!guildId,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Extract and filter text channels once guildDetails are loaded
+  const textChannels = React.useMemo(() => {
+    return guildDetails?.channels?.filter(ch => ch.channel_type === 0) || []; // 0 = Text channel
+  }, [guildDetails]);
+
 
   // Initialize form state with defaults matching the NEW GuildSettingsType
   // Use null for optional fields where appropriate
@@ -358,50 +372,70 @@ const SettingsForm: React.FC = () => {
                Enable Emoji Reactions
              </CheckboxLabel>
            </FormGroup>
-           {/* Add inputs for other top-level fields like channel IDs */}
+           {/* Channel Select Dropdowns */}
            <FormGroup>
-             <Label htmlFor="level_up_channel_id">Level Up Channel ID</Label>
-             <Input
+             <Label htmlFor="level_up_channel_id">Level Up Channel</Label>
+             <Select
                id="level_up_channel_id"
                name="level_up_channel_id"
-               type="number" // Use number type if appropriate
-               value={formState.level_up_channel_id ?? ''}
+               value={formState.level_up_channel_id?.toString() ?? ''} // Ensure value matches option value (string or '')
                onChange={handleChange}
-               placeholder="Enter channel ID"
-             />
+             >
+               <option value="">None</option>
+               {textChannels.map(channel => (
+                 <option key={channel.id} value={channel.id}>
+                   #{channel.name}
+                 </option>
+               ))}
+             </Select>
            </FormGroup>
             <FormGroup>
-             <Label htmlFor="warn_channel_id">Warn Channel ID</Label>
-             <Input
+             <Label htmlFor="warn_channel_id">Warn Channel</Label>
+             <Select
                id="warn_channel_id"
                name="warn_channel_id"
-               type="number"
-               value={formState.warn_channel_id ?? ''}
+               value={formState.warn_channel_id?.toString() ?? ''}
                onChange={handleChange}
-               placeholder="Enter channel ID"
-             />
+             >
+               <option value="">None</option>
+               {textChannels.map(channel => (
+                 <option key={channel.id} value={channel.id}>
+                   #{channel.name}
+                 </option>
+               ))}
+             </Select>
            </FormGroup>
             <FormGroup>
-             <Label htmlFor="delete_log_channel_id">Delete Log Channel ID</Label>
-             <Input
+             <Label htmlFor="delete_log_channel_id">Delete Log Channel</Label>
+             <Select
                id="delete_log_channel_id"
                name="delete_log_channel_id"
-               type="number"
-               value={formState.delete_log_channel_id ?? ''}
+               value={formState.delete_log_channel_id?.toString() ?? ''}
                onChange={handleChange}
-               placeholder="Enter channel ID"
-             />
+             >
+               <option value="">None</option>
+               {textChannels.map(channel => (
+                 <option key={channel.id} value={channel.id}>
+                   #{channel.name}
+                 </option>
+               ))}
+             </Select>
            </FormGroup>
             <FormGroup>
-             <Label htmlFor="reaction_log_channel_id">Reaction Log Channel ID</Label>
-             <Input
+             <Label htmlFor="reaction_log_channel_id">Reaction Log Channel</Label>
+             <Select
                id="reaction_log_channel_id"
                name="reaction_log_channel_id"
-               type="number"
-               value={formState.reaction_log_channel_id ?? ''}
+               value={formState.reaction_log_channel_id?.toString() ?? ''}
                onChange={handleChange}
-               placeholder="Enter channel ID"
-             />
+             >
+               <option value="">None</option>
+               {textChannels.map(channel => (
+                 <option key={channel.id} value={channel.id}>
+                   #{channel.name}
+                 </option>
+               ))}
+             </Select>
            </FormGroup>
            <FormGroup>
              <Label htmlFor="url_rule">URL Rule Regex</Label>
@@ -479,16 +513,21 @@ const SettingsForm: React.FC = () => {
             </CheckboxLabel>
           </FormGroup>
           <FormGroup>
-            <Label htmlFor="settings.welcomeMessage.channelId">Welcome Channel ID</Label>
-            <Input
+            <Label htmlFor="settings.welcomeMessage.channelId">Welcome Channel</Label>
+            <Select
               id="settings.welcomeMessage.channelId"
               name="settings.welcomeMessage.channelId" // Updated name
-              type="number"
-              value={formState.settings?.welcomeMessage?.channelId ?? ''}
+              value={formState.settings?.welcomeMessage?.channelId?.toString() ?? ''} // Ensure value matches option value
               onChange={handleChange}
-              placeholder="Enter channel ID"
               disabled={!(formState.settings?.welcomeMessage?.enabled ?? false)}
-            />
+            >
+              <option value="">None</option>
+              {textChannels.map(channel => (
+                <option key={channel.id} value={channel.id}>
+                  #{channel.name}
+                </option>
+              ))}
+            </Select>
           </FormGroup>
           <FormGroup>
             <Label htmlFor="settings.welcomeMessage.message">Welcome Message</Label>

@@ -102,6 +102,12 @@ export const fetchCurrentUser = async () => {
   return response.data;
 };
 
+// Guild Details (including channels)
+export const fetchGuildDetails = async (guildId: string) => {
+  const response = await api.get(`/guilds/${guildId}`);
+  return response.data;
+};
+
 // Guild Settings
 export const fetchGuildSettings = async (guildId: string) => {
   const response = await api.get(`/guilds/${guildId}/settings`);
