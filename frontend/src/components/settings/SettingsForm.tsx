@@ -205,6 +205,7 @@ const SettingsForm: React.FC = () => {
         delete_log_channel_id: fetchedSettings.delete_log_channel_id ?? null,
         reaction_log_channel_id: fetchedSettings.reaction_log_channel_id ?? null,
       }));
+      console.log("Fetched settings:", fetchedSettings); // Log fetched settings
     }
   }, [fetchedSettings]);
 
@@ -248,6 +249,7 @@ const SettingsForm: React.FC = () => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     const checked = type === 'checkbox' ? (e.target as HTMLInputElement).checked : undefined;
+    console.log(`handleChange - name: ${name}, type: ${type}, checked: ${checked}, value: ${value}`); // Log change details
     const isNumberInput = ['mod_role_id', 'admin_role_id', 'level_up_channel_id', 'warn_channel_id', 'delete_log_channel_id', 'reaction_log_channel_id'].includes(name) || name.endsWith('channelId'); // Add other numeric fields if any
 
     // Function to update nested state within the 'settings' object
