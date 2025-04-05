@@ -635,42 +635,53 @@ fn get_dynamic_prefix(ctx: PartialContext<'_, Data, Error>) -> BoxFuture<'_, Res
         // Only guilds can have custom prefixes
         let guild_id = match ctx.guild_id { // Access field directly
             Some(id) => id.get() as i64,
-        None => {
-            // debug!("Message not in a guild, no dynamic prefix."); // Optional: Log DM case
-            return Ok(None); // No prefix in DMs
-        }
-    };
-
-    debug!("get_dynamic_prefix: Checking prefix for guild_id: {}", guild_id); // More specific log
-
-    // Access the database service from the shared Data
-    let db = &ctx.data.database;
-    let client = db.get_client().await?;
-
-    // Query for the prefix
-    let row_opt = client
-        .query_opt(
-            "SELECT prefix FROM guild_settings WHERE guild_id = $1",
-            &[&guild_id],
-        )
-        .await?;
-
-    match row_opt {
-        Some(row) => {
-            let prefix: Option<String> = row.get(0);
-            if let Some(ref p) = prefix {
-                debug!("Found prefix '{}' for guild_id: {}", p, guild_id);
-            } else {
-                debug!("No custom prefix found for guild_id: {}", guild_id);
-            }
-            Ok(prefix) // Return the fetched prefix (or None if it's NULL in DB)
-        }
-        None => {
-            debug!("No settings row found for guild_id: {}", guild_id);
-            Ok(None) // No settings row means no custom prefix
+            None => {
+                // debug!("Message not in a guild, no dynamic prefix."); // Optional: Log DM case
+                return Ok(None); // No prefix in DMs
             }
         };
-        debug!("get_dynamic_prefix: Returning prefix result for guild {}: {:?}", guild_id, result); // Log the result
-        result
+
+        debug!("get_dynamic_prefix: Checking prefix for guild_id: {}", guild_id); // More specific log
+
+        // Access the database service from the shared Data
+        let db = &ctx.data.database;
+        // Use map_err for cleaner error handling on client acquisition
+        let client = match db.get_client().await {
+            Ok(client) => client,
+            Err(client_err) => {
+                error!("get_dynamic_prefix: Failed to get database client: {}", client_err);
+                return Err(client_err); // Return early on client error
+            }
+        };
+
+        // Query for the prefix and handle potential errors
+        let result = match client
+            .query_opt(
+                "SELECT prefix FROM guild_settings WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await
+        {
+            Ok(Some(row)) => {
+                let prefix: Option<String> = row.get(0);
+                if let Some(ref p) = prefix {
+                    debug!("get_dynamic_prefix: Found prefix '{}' for guild_id: {}", p, guild_id);
+                } else {
+                    debug!("get_dynamic_prefix: No custom prefix found for guild_id: {}", guild_id);
+                }
+                Ok(prefix) // Return the fetched prefix (or None if it's NULL in DB)
+            }
+            Ok(None) => {
+                debug!("get_dynamic_prefix: No settings row found for guild_id: {}", guild_id);
+                Ok(None) // No settings row means no custom prefix
+            }
+            Err(db_err) => {
+                error!("get_dynamic_prefix: Database error fetching prefix for guild {}: {}", guild_id, db_err);
+                Err(Error::from(db_err)) // Propagate database error
+            }
+        }; // Semicolon needed here
+
+        debug!("get_dynamic_prefix: Returning prefix result for guild {}: {:?}", guild_id, &result); // Log the result
+        result // Return the final result
     }) // Close Box::pin
 }
