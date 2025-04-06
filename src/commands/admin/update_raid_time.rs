@@ -148,7 +148,7 @@ pub async fn updateraidtime(
     #[description = "Select the time"] time: Time,
     #[description = "Select the timezone"] timezone: Timezone,
     #[description = "Select the raid"] raid: Raid,
-    #[description = "Select the channel"] channel: ChannelId,
+    #[description = "Select the channel"] channel: serenity::model::channel::GuildChannel,
     #[description = "Is this M.I.N.E. or not?"] mine: Option<bool>,
 ) -> Result<(), Error> {
     ctx.defer().await?;
@@ -161,7 +161,7 @@ pub async fn updateraidtime(
         topic += " M.I.N.E.";
     }
 
-    ctx.http().edit_channel(channel, &EditChannel::new().topic(&topic), None).await?;
+    ctx.http().edit_channel(channel.id, &EditChannel::new().topic(&topic), None).await?;
 
     let response = poise::CreateReply::default()
         .content(format!("Updated channel topic: {}", topic))
