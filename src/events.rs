@@ -82,6 +82,11 @@ pub async fn handle_event(
             }
         }
         FullEvent::InteractionCreate { interaction } => {
+            // Log the raw interaction structure for debugging command parsing issues
+            if let Interaction::Command(command) = interaction {
+                debug!("Received Command interaction: {:?}", command);
+            }
+
             if let Interaction::Component(component) = interaction {
                 if component.data.custom_id.starts_with("role_") || component.data.custom_id.starts_with("nested_") {
                     handle_role_button(ctx, component).await?;
