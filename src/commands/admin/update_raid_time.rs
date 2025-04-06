@@ -143,7 +143,7 @@ impl Raid {
 pub async fn updateraidtime(
     ctx: Context<'_>,
     #[description = "Select the month"] month: Month,
-    #[description = "Enter the day"] day: i64,
+    #[description = "Enter the day"] day: u64,
     #[description = "Select the year"] year: Year,
     #[description = "Select the time"] time: Time,
     #[description = "Select the timezone"] timezone: Timezone,
@@ -153,7 +153,7 @@ pub async fn updateraidtime(
 ) -> Result<(), Error> {
     ctx.defer().await?;
 
-    let datetime = parse_datetime(&month.to_string(), day, year as i64, &time.to_string(), timezone.as_ref())?;
+    let datetime = parse_datetime(&month.to_string(), day as i64, year as i64, &time.to_string(), timezone.as_ref())?;
     let unix_timestamp = datetime.timestamp();
 
     let mut topic = format!("Next Meet Is: {} | Time: <t:{}:f>", raid.as_ref(), unix_timestamp);
