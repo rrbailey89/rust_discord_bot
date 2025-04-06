@@ -41,16 +41,7 @@ pub enum Time {
     #[name = "11:00 PM"] T1100PM,
 }
 
-#[derive(poise::ChoiceParameter)]
-pub enum Year {
-    #[name = "2024"] Y2024 = 2024,
-    #[name = "2025"] Y2025 = 2025,
-    #[name = "2026"] Y2026 = 2026,
-    #[name = "2027"] Y2027 = 2027,
-    #[name = "2028"] Y2028 = 2028,
-    #[name = "2029"] Y2029 = 2029,
-    #[name = "2030"] Y2030 = 2030,
-}
+// Removed Year enum
 
 #[derive(poise::ChoiceParameter)]
 pub enum Timezone {
@@ -144,7 +135,8 @@ pub async fn updateraidtime(
     ctx: Context<'_>,
     #[description = "Select the month"] month: Month,
     #[description = "Enter the day"] day: u64,
-    #[description = "Select the year"] year: Year,
+    #[description = "Enter the year (e.g., 2024)"]
+    #[min = 2024] #[max = 2030] year: u64,
     #[description = "Select the time"] time: Time,
     #[description = "Select the timezone"] timezone: Timezone,
     #[description = "Select the raid"] raid: Raid,
@@ -152,6 +144,11 @@ pub async fn updateraidtime(
     #[description = "Is this M.I.N.E. or not?"] mine: Option<bool>,
 ) -> Result<(), Error> {
     ctx.defer().await?;
+
+    // Basic validation for year range (optional, poise attributes handle some)
+    if !(2024..=2030).contains(&year) {
+        return Err(Error::Validation("Year must be between 2024 and 2030.".to_string()));
+    }
 
     let datetime = parse_datetime(&month.to_string(), day as i64, year as i64, &time.to_string(), timezone.as_ref())?;
     let unix_timestamp = datetime.timestamp();
