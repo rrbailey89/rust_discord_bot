@@ -1,8 +1,21 @@
-# Build stage
-FROM rust:1.78 as builder
+# Frontend build stage
+FROM node:18-alpine AS frontend-builder
+WORKDIR /usr/src/frontend
+# Copy package.json and package-lock.json (or yarn.lock) separately to leverage Docker cache
+COPY frontend/package*.json ./
+RUN npm ci
+# Copy frontend source code
+COPY frontend/ ./
+# Build the frontend
+RUN npm run build
+
+# Rust build stage
+FROM rust:1.85 as rust-builder
 WORKDIR /usr/src/app
 COPY . .
-RUN cargo build --release
+# Copy the built frontend files to the static directory
+COPY --from=frontend-builder /usr/src/static /usr/src/app/static
+RUN RUSTFLAGS="-A warnings" cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -10,9 +23,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Copy the built binary
-COPY --from=builder /usr/src/app/target/release/Blame_Serena /app/
+COPY --from=rust-builder /usr/src/app/target/release/Blame_Serena /app/
 # Copy migrations directory
-COPY --from=builder /usr/src/app/migrations /app/migrations
+COPY --from=rust-builder /usr/src/app/migrations /app/migrations
+# Copy static files for web server
+COPY --from=rust-builder /usr/src/app/static /app/static
 
 # Create directory for logs
 RUN mkdir -p /app/logs

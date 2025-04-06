@@ -4,6 +4,7 @@ pub mod database;
 pub mod logging;
 pub mod api;
 pub mod cache;
+pub mod web;
 
 use dotenv::dotenv;
 use crate::error::Error;
@@ -14,6 +15,7 @@ pub use database::DatabaseConfig;
 pub use logging::LoggingConfig;
 pub use api::ApiConfig;
 pub use cache::CacheConfig;
+pub use web::WebConfig;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -22,6 +24,7 @@ pub struct Config {
     pub logging: LoggingConfig,
     pub api: ApiConfig,
     pub cache: CacheConfig,
+    pub web: WebConfig,
 }
 
 impl Config {
@@ -35,6 +38,7 @@ impl Config {
             logging: LoggingConfig::load()?,
             api: ApiConfig::load()?,
             cache: CacheConfig::load()?,
+            web: WebConfig::load()?,
         })
     }
 }

@@ -1,7 +1,7 @@
 // services/api.rs
 use crate::error::Error;
 use crate::config::ApiConfig;
-use crate::services::cache::{CacheService, CacheResult};
+use crate::services::cache::CacheService;
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::sync::Arc;

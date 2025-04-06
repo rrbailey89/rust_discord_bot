@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Bot Management</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #5865F2;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .auth-section {
+            display: flex;
+            align-items: center;
+        }
+        .user-info {
+            margin-right: 15px;
+            display: none;
+            color: white;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .card {
+            flex: 1 1 300px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .footer {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f1f1f1;
+            border-radius: 8px;
+            text-align: center;
+        }
+        button {
+            background-color: #5865F2;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #4752c4;
+        }
+        .login-button {
+            background-color: #43b581;
+        }
+        .login-button:hover {
+            background-color: #3ca374;
+        }
+        .logout-button {
+            background-color: #f04747;
+            display: none;
+        }
+        .logout-button:hover {
+            background-color: #d84040;
+        }
+        .feature-card {
+            display: none; /* Hidden until authenticated */
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Discord Bot Management</h1>
+            <p>Manage your bot configuration and server settings</p>
+        </div>
+        <div class="auth-section">
+            <div class="user-info">
+                <img id="userAvatar" class="user-avatar" src="" alt="User Avatar">
+                <span id="userName"></span>
+            </div>
+            <button id="loginButton" class="login-button">Login with Discord</button>
+            <button id="logoutButton" class="logout-button">Logout</button>
+        </div>
+    </div>
+
+    <div id="authMessage" style="display: none; padding: 20px; background-color: #f8f9fa; border-radius: 8px; margin-bottom: 20px;">
+        <p>Please log in with your Discord account to access the bot management features.</p>
+    </div>
+
+    <div class="container">
+        <div class="card feature-card">
+            <h2>Server Management</h2>
+            <p>Configure bot settings for each server</p>
+            <button>Manage Servers</button>
+        </div>
+
+        <div class="card feature-card">
+            <h2>Command Configuration</h2>
+            <p>Enable or disable commands for your servers</p>
+            <button>Configure Commands</button>
+        </div>
+
+        <div class="card feature-card">
+            <h2>Word Detection</h2>
+            <p>Set up automatic responses to specific words</p>
+            <button>Manage Word Rules</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Welcome to the Discord Bot Management Interface</h2>
+            <p>This is a simple demonstration of the authentication flow. In Phase 3, this will be replaced with a full-featured React application.</p>
+            <p>To get started:</p>
+            <ol>
+                <li>Click the "Login with Discord" button at the top right</li>
+                <li>Authorize the application to access your Discord account</li>
+                <li>You will be redirected back to this page and logged in</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>This is a placeholder for the Discord Bot Management interface. The real React frontend will be implemented in future phases.</p>
+    </div>
+
+    <script>
+        const loginButton = document.getElementById('loginButton');
+        const logoutButton = document.getElementById('logoutButton');
+        const userInfo = document.querySelector('.user-info');
+        const userName = document.getElementById('userName');
+        const userAvatar = document.getElementById('userAvatar');
+        const authMessage = document.getElementById('authMessage');
+        const featureCards = document.querySelectorAll('.feature-card');
+        
+        // Check if user is already logged in (has a valid token)
+        function checkAuth() {
+            const token = localStorage.getItem('auth_token');
+            if (token) {
+                // Get user info from token (you might fetch this from the server in a real app)
+                try {
+                    // Parse the JWT payload (for demo purposes only - in production you should verify on server)
+                    const tokenPayload = JSON.parse(atob(token.split('.')[1]));
+                    if (tokenPayload.exp * 1000 > Date.now()) {
+                        // Token is still valid
+                        showAuthenticatedState(tokenPayload.user);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Error parsing token:', e);
+                }
+                
+                // Token is invalid or expired
+                localStorage.removeItem('auth_token');
+            }
+            
+            showUnauthenticatedState();
+        }
+        
+        function showAuthenticatedState(user) {
+            loginButton.style.display = 'none';
+            logoutButton.style.display = 'block';
+            userInfo.style.display = 'flex';
+            authMessage.style.display = 'none';
+            
+            // Display user info
+            userName.textContent = user.username;
+            if (user.avatar_url) {
+                userAvatar.src = user.avatar_url;
+            } else {
+                userAvatar.src = 'https://cdn.discordapp.com/embed/avatars/0.png'; // Default Discord avatar
+            }
+            
+            // Show the feature cards
+            featureCards.forEach(card => {
+                card.style.display = 'block';
+            });
+        }
+        
+        function showUnauthenticatedState() {
+            loginButton.style.display = 'block';
+            logoutButton.style.display = 'none';
+            userInfo.style.display = 'none';
+            authMessage.style.display = 'block';
+            
+            // Hide the feature cards
+            featureCards.forEach(card => {
+                card.style.display = 'none';
+            });
+        }
+        
+        // Handle login button click
+        loginButton.addEventListener('click', function() {
+            window.location.href = '/api/auth/login';
+        });
+        
+        // Handle logout button click
+        logoutButton.addEventListener('click', function() {
+            localStorage.removeItem('auth_token');
+            showUnauthenticatedState();
+        });
+        
+        // Check for authentication on page load
+        checkAuth();
+        
+        // Check if we were redirected back with a token
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('token')) {
+            const token = urlParams.get('token');
+            localStorage.setItem('auth_token', token);
+            
+            // Remove the token from the URL to prevent sharing or bookmarking tokens
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            checkAuth();
+        }
+        
+        // For demo purposes - add click handlers to feature buttons
+        document.querySelectorAll('.feature-card button').forEach(button => {
+            button.addEventListener('click', function() {
+                alert('This feature is coming soon! The frontend is still in development.');
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+// User related types
+export interface User {
+  id: string;
+  username: string;
+  avatar_url?: string;
+  guilds: Guild[];
+  // New fields from expanded OAuth scopes
+  email?: string;
+  verified?: boolean;
+  locale?: string;
+}
+
+// Guild related types
+export interface Guild {
+  id: string;
+  name: string;
+  icon?: string;
+  icon_url?: string;
+  owner: boolean;
+  permissions: number;
+  botJoined?: boolean;
+  memberCount?: number;
+  commandsEnabled?: number;
+  wordRules?: number;
+  channels?: ChannelInfo[]; // Add channels array
+}
+
+// Channel Info Type
+export interface ChannelInfo {
+  id: string;
+  name: string;
+  channel_type: number; // 0 = text, 2 = voice, etc.
+  position: number;
+  topic?: string | null;
+}
+
+// Authentication related types
+export interface AuthResponse {
+  token: string;
+  expires_in: number;
+  user: User;
+}
+
+// Command related types
+export interface Command {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  category?: string;
+  settings?: Record<string, any>;
+}
+
+// Word detection rule types
+export interface WordDetectionRule {
+  id: number;
+  guild_id: string;
+  pattern: string;
+  action: string;
+  action_params: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+// Settings types - Updated to match backend structure and use string IDs
+export interface GuildSettings {
+  guild_id: string; // Use string for consistency
+  prefix?: string | null;
+  mod_role_id?: string | null; // Use string | null
+  admin_role_id?: string | null; // Use string | null
+  settings?: { // Nested settings object
+    autoModeration?: { // Optional nested structure
+      enabled?: boolean;
+      filterLinks?: boolean;
+      filterInvites?: boolean;
+      filterProfanity?: boolean;
+    };
+    welcomeMessage?: { // Optional nested structure
+      enabled?: boolean;
+      channelId?: string | null; // Use string | null
+      message?: string;
+    };
+    // Add other potential nested settings here if needed
+    [key: string]: any; // Allow other arbitrary settings
+  } | null;
+  emoji_reactions_enabled?: boolean | null;
+  level_up_channel_id?: string | null; // Use string | null
+  warn_channel_id?: string | null; // Use string | null
+  url_rule?: string | null;
+  delete_log_channel_id?: string | null; // Use string | null
+  reaction_log_channel_id?: string | null; // Use string | null
+
+  // Frontend-specific state (might need adjustment based on how backend sends data)
+  logChannelId?: string; // Kept for now, might need removal/update
+  moderationEnabled?: boolean; // Kept for now, might need removal/update
+}
+
+// Analytics types
+export interface AnalyticsEvent {
+  id: number;
+  event_type: string;
+  user_id?: string;
+  guild_id?: string;
+  event_data: Record<string, any>;
+  timestamp: string;
+}
+
+// Command usage statistics (as returned by summary endpoints)
+export interface CommandUsage {
+  command_id: string;
+  command_name: string;
+  count: number;
+}
+
+// Represents individual command usage over time
+export interface CommandTimeSeriesPoint {
+  date: string; // Use string for date representation in frontend (e.g., "YYYY-MM-DD")
+  command_name: string;
+  count: number;
+}
+
+// Represents individual user activity over time
+export interface UserTimeSeriesPoint {
+  date: string; // Use string for date representation in frontend
+  user_identifier: string; // Username or ID
+  messages: number;
+  commands: number;
+}
+
+// // Represents a single data point in a time series chart (REDUNDANT - REMOVED)
+// export interface TimeSeriesDataPoint {
+//   date: string;
+//   value: number;
+// }
+
+// // Represents user activity data point in a time series chart (REDUNDANT - REMOVED)
+// export interface UserActivityDataPoint {
+//   date: string;
+//   messages: number;
+//   commands: number;
+// }
+
+// Analytics summary for a guild
+export interface GuildAnalyticsSummary {
+  guild_id: string; // Use string to match other ID types in frontend
+  period: string;
+  active_users: number;
+  commands_used: number;
+  top_commands: CommandUsage[];
+  message_count: number;
+  events_by_type: Record<string, number>; // Use Record for HashMap equivalent
+  // Use new granular fields
+  individual_command_usage?: CommandTimeSeriesPoint[];
+  individual_user_activity?: UserTimeSeriesPoint[];
+}
+
+
+// API Error type
+export interface ApiError {
+  message: string;
+  code?: string;
+  status?: number;
+}

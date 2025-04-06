@@ -3,7 +3,7 @@ use crate::commands::utility::reminder::{Frequency, Reminder};
 use crate::error::Error;
 use crate::config::database::DatabaseConfig;
 use crate::services::migrations::Migrations;
-use chrono::{Datelike, Utc, Weekday, NaiveDate};
+use chrono::{Datelike, Utc, Weekday, NaiveDate, DateTime}; // Added DateTime
 use chrono_tz::America::Los_Angeles;
 use poise::serenity_prelude::{ChannelType, Guild, UserId};
 use std::str::FromStr;
@@ -15,6 +15,7 @@ use serde_json::Value;
 use dashmap::DashMap;
 use futures::future::BoxFuture;
 use std::path::Path;
+use poise::serenity_prelude::Member; // Added Member, RoleId
 
 /// Health check status for the database connection pool
 #[derive(Debug, Clone)]
@@ -96,11 +97,7 @@ impl DatabaseService {
             // Levels
             ("get_user_level", "INSERT INTO user_levels (guild_id, user_id, level, experience) VALUES ($1, $2, 1, 0) ON CONFLICT (guild_id, user_id) DO UPDATE SET guild_id = EXCLUDED.guild_id RETURNING level, experience"),
             ("update_user_experience", "UPDATE user_levels SET experience = $3 WHERE guild_id = $1 AND user_id = $2 RETURNING level, experience"),
-            
-            // Guild settings
-            ("fetch_emoji_reactions_enabled", "SELECT emoji_reactions_enabled FROM guild_emoji_settings WHERE guild_id = $1"),
-            ("store_emoji_reactions_enabled", "INSERT INTO guild_emoji_settings (guild_id, emoji_reactions_enabled) VALUES ($1, $2) ON CONFLICT (guild_id) DO UPDATE SET emoji_reactions_enabled = EXCLUDED.emoji_reactions_enabled"),
-            
+
             // Unavailability
             ("store_unavailability_channel", "INSERT INTO unavailability_channels (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id"),
             ("fetch_unavailability_channel", "SELECT channel_id FROM unavailability_channels WHERE guild_id = $1"),
@@ -220,7 +217,7 @@ impl DatabaseService {
         migrations.load_from_directory(migrations_dir)?;
         
         // Get a client connection
-        let mut client = self.get_client().await?;
+        let client = self.get_client().await?;
         
         // Create migrations table if it doesn't exist
         client.execute(
@@ -365,6 +362,20 @@ impl DatabaseService {
             .await?;
 
         Ok(row.map(|r| r.get(0)))
+    }
+
+    /// Fetches the warn channel ID from the guild_settings table
+    pub async fn fetch_guild_warn_channel(&self, guild_id: i64) -> Result<Option<i64>, Error> {
+        let client = self.pool.get().await?;
+        let row = client
+            .query_opt(
+                "SELECT warn_channel_id FROM guild_settings WHERE guild_id = $1",
+                &[&guild_id],
+            )
+            .await?;
+
+        // The column might be null in the DB, map the Option<i64> from the row directly.
+        Ok(row.and_then(|r| r.get(0)))
     }
 
     pub async fn store_warn_channel(&self, guild_id: i64, channel_id: i64) -> Result<(), Error> {
@@ -530,12 +541,21 @@ impl DatabaseService {
         let client = self.pool.get().await?;
         let row = client
             .query_opt(
-                "SELECT emoji_reactions_enabled FROM guild_emoji_settings WHERE guild_id = $1",
+                "SELECT settings ->> 'emoji_reactions_enabled' FROM guild_settings WHERE guild_id = $1",
                 &[&guild_id],
             )
             .await?;
 
-        Ok(row.map(|r| r.get(0)).unwrap_or(true)) // Explicitly return true if no record is found
+        match row {
+            Some(row) => {
+                let enabled_str: Option<String> = row.get(0);
+                match enabled_str {
+                    Some(s) => s.parse::<bool>().map_err(|e| Error::Unknown(format!("Failed to parse emoji_reactions_enabled: {}", e))),
+                    None => Ok(true), // Default to true if setting is not present
+                }
+            }
+            None => Ok(true), // Default to true if no record is found
+        }
     }
 
     // Store or update the emoji reactions enabled/disabled setting for a guild
@@ -543,9 +563,10 @@ impl DatabaseService {
         let client = self.pool.get().await?;
         client
             .execute(
-                "INSERT INTO guild_emoji_settings (guild_id, emoji_reactions_enabled)
-                 VALUES ($1, $2)
-                 ON CONFLICT (guild_id) DO UPDATE SET emoji_reactions_enabled = EXCLUDED.emoji_reactions_enabled",
+                "INSERT INTO guild_settings (guild_id, settings)
+                 VALUES ($1, jsonb_build_object('emoji_reactions_enabled', $2))
+                 ON CONFLICT (guild_id) DO UPDATE SET
+                 settings = jsonb_set(guild_settings.settings, '{emoji_reactions_enabled}', to_jsonb($2))",
                 &[&guild_id, &enabled],
             )
             .await?;
@@ -1100,6 +1121,79 @@ impl DatabaseService {
             )
             .await?;
         Ok(())
+    }
+    
+    /// Store guild member information in the database using Member structs
+    pub async fn store_guild_members(
+        &self,
+        guild_id: i64,
+        members: &[Member], // Changed to accept &[Member]
+    ) -> Result<usize, Error> {
+        let client = self.pool.get().await?;
+        let mut stored_count = 0;
+
+        for member in members {
+            let user_id_i64 = member.user.id.get() as i64;
+
+            // Convert RoleId vector to String vector for text[] column
+            let role_ids_str: Vec<String> = member.roles.iter().map(|r| r.to_string()).collect();
+            // Explicitly convert joined_at to the correct type for the database parameter
+            // Use unix_timestamp() and DateTime::from_timestamp
+            let joined_at_db: Option<DateTime<Utc>> = member.joined_at.map(|ts| DateTime::from_timestamp(ts.unix_timestamp(), 0)).flatten();
+
+            // Store guild_members data
+            match client.execute(
+                "INSERT INTO guild_members (guild_id, user_id, nickname, roles, joined_at)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (guild_id, user_id)
+                 DO UPDATE SET
+                    nickname = EXCLUDED.nickname,
+                    roles = EXCLUDED.roles,
+                    joined_at = EXCLUDED.joined_at",
+                &[
+                    &guild_id,
+                    &user_id_i64,
+                    &member.nick, // Pass Option<String> directly
+                    &role_ids_str,
+                    &joined_at_db, // Use the converted variable
+                ],
+            ).await {
+                Ok(_) => {
+                    stored_count += 1;
+                }
+                Err(e) => {
+                    // Log error for guild_members storage failure
+                    tracing::error!("Failed to store guild member {} in guild {}: {}", user_id_i64, guild_id, e);
+                }
+            }
+
+            // Also store basic user information in the 'users' table
+            // Use direct field access from member.user
+            let username = &member.user.name;
+            // Discriminator might be "0" or absent for new usernames
+            let discriminator = member.user.discriminator.map(|d| d.to_string());
+            // Convert Option<ImageHash> to Option<String> and bind to variable
+            let avatar_db: Option<String> = member.user.avatar.map(|h| h.to_string());
+
+            if let Err(e) = client.execute(
+                "INSERT INTO users (user_id, username, discriminator, avatar, last_updated)
+                 VALUES ($1, $2, $3, $4, NOW())
+                 ON CONFLICT (user_id)
+                 DO UPDATE SET
+                    username = EXCLUDED.username,
+                    discriminator = EXCLUDED.discriminator,
+                                avatar = EXCLUDED.avatar,
+                                last_updated = NOW()",
+                &[&user_id_i64, &username, &discriminator, &avatar_db], // Use the converted variable
+            ).await {
+                // Use ERROR level logging for this potentially critical data
+                tracing::error!("Failed to store user data for {}: {}", user_id_i64, e);
+                // Note: We don't return the error here to allow storing other members,
+                // but the error is now logged more visibly.
+            }
+        }
+
+        Ok(stored_count)
     }
     
     /// Optimized version of store_guild_channels that processes channels in sequence

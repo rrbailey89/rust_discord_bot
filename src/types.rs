@@ -18,13 +18,13 @@ impl TypeMapKey for ShardManagerContainer {
     type Value = Arc<ShardManager>;
 }
 impl TypeMapKey for DataContainer {
-    type Value = Data;
+    type Value = Arc<Data>;
 }
 
 // Global static reference to the bot data
 // This allows services and utilities to access the Data struct
 // without having to pass it around explicitly
-pub static DATA: OnceCell<Data> = OnceCell::new();
+pub static DATA: OnceCell<Arc<Data>> = OnceCell::new();
 
 impl<'a> FromSql<'a> for Time {
     fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {

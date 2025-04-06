@@ -15,7 +15,8 @@ pub async fn warn(
     ctx.defer().await?;
 
     let guild_id = ctx.guild_id().ok_or_else(|| Error::Unknown("Failed to get guild ID".to_string()))?;
-    let warn_channel_id = ctx.data().database.fetch_warn_channel(guild_id.get() as i64).await?;
+    // Fetch from the correct table using the new function
+    let warn_channel_id = ctx.data().database.fetch_guild_warn_channel(guild_id.get() as i64).await?;
 
     let reason_message = reason.unwrap_or_else(|| "No reason provided".to_string());
     let warn_message = format!("🚨 {} has been warned for: {}", member.user.name, reason_message);

@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::{Semaphore, RwLock, Mutex};
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{debug, warn};
-use crate::error::{Error, RichError, ErrorContext};
+use tracing::warn;
+use crate::error::Error;
 
 /// Rate limit definition
 #[derive(Debug, Clone)]

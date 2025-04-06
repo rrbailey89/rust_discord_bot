@@ -1,6 +1,5 @@
 use crate::Data;
 use crate::error::Error;
-use poise::serenity_prelude as serenity;
 use std::time::{Duration, Instant};
 
 /// Show the database connection pool health status
